@@ -40,7 +40,7 @@ function save(key: string, value: unknown) {
 }
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [network, setNetworkState] = useState<Network>(() => load('cf.network', 'devnet'))
+  const [network, setNetworkState] = useState<Network>(() => load('cf.network', 'mainnet'))
   const [customRpc, setCustomRpcState] = useState<Record<Network, string>>(() =>
     load('cf.rpc', { devnet: '', mainnet: '' }),
   )
