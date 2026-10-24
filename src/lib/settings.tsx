@@ -2,9 +2,10 @@ import { createContext, useContext, useState, type ReactNode } from 'react'
 
 export type Network = 'devnet' | 'mainnet'
 
+// Build-time RPCs (e.g. Helius) apply to every visitor; users can still override them in Settings
 export const DEFAULT_RPC: Record<Network, string> = {
-  devnet: 'https://api.devnet.solana.com',
-  mainnet: 'https://api.mainnet-beta.solana.com',
+  devnet: (import.meta.env?.VITE_RPC_DEVNET as string | undefined)?.trim() || 'https://api.devnet.solana.com',
+  mainnet: (import.meta.env?.VITE_RPC_MAINNET as string | undefined)?.trim() || 'https://api.mainnet-beta.solana.com',
 }
 
 export const FEE_WALLET = (import.meta.env?.VITE_FEE_WALLET as string | undefined)?.trim() || ''

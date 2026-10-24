@@ -15,7 +15,7 @@ npm install
 npm run dev
 ```
 
-Netzwerk (Devnet/Mainnet) und eigene RPC-URLs stellst du oben rechts ein (Pill + ⚙). Für Mainnet einen eigenen RPC verwenden (Helius, QuickNode …); der öffentliche Endpoint blockt Browser-Anfragen häufig.
+Netzwerk (Devnet/Mainnet) und eigene RPC-URLs stellst du oben rechts ein (Pill + ⚙). Standard-RPCs für alle Besucher setzt du als `VITE_RPC_MAINNET` / `VITE_RPC_DEVNET` (lokal in `.env`, für GitHub Pages als Repository-Variable). Für Mainnet einen eigenen RPC verwenden (Helius, QuickNode …); der öffentliche Endpoint blockt Browser-Anfragen häufig.
 
 ## Plattform-Gebühr (optional)
 

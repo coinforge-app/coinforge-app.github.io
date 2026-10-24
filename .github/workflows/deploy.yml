@@ -26,6 +26,9 @@ jobs:
       - run: npm ci
       - run: npm run build
         env:
+          # Optional default RPCs (e.g. Helius) baked into the public bundle — restrict the key to your domain
+          VITE_RPC_MAINNET: ${{ vars.VITE_RPC_MAINNET }}
+          VITE_RPC_DEVNET: ${{ vars.VITE_RPC_DEVNET }}
           # Optional platform fee — set as repository variables (Settings → Secrets and variables → Actions → Variables)
           VITE_FEE_WALLET: ${{ vars.VITE_FEE_WALLET }}
           VITE_FEE_SOL: ${{ vars.VITE_FEE_SOL }}
