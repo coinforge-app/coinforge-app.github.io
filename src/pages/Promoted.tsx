@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
-import { buildPromoteTx, checkMint, fetchPromotions, isOwner, promotionsEnabled, timeLeft, type Promotion } from '../lib/promote'
+import {
+  buildPromoteTx,
+  checkMint,
+  fetchPromotions,
+  isOwner,
+  promotionsEnabled,
+  TIERS,
+  timeLeft,
+  type Promotion,
+  type TierId,
+} from '../lib/promote'
 import { fetchCoinInfo, fetchMintSafety, safetyFlags, usd, type CoinInfo, type MintSafety } from '../lib/market'
 import { explorerUrl, PROMO_HOURS, PROMO_SOL, REF_PERCENT, useSettings } from '../lib/settings'
 import { getReferrer } from '../lib/referral'
@@ -23,6 +33,8 @@ function demoPromotions(): Promotion[] {
     expiresAt: now + (20 - i * 5) * 3600,
     boosts: i === 1 ? 2 : 1,
     featured: i === 2,
+    tier: (['top', 'boost', 'basic'] as TierId[])[i],
+    points: [10, 6, 1][i],
   }))
 }
 
@@ -57,12 +69,13 @@ function PromoCard({ promo, info, safety, rank }: { promo: Promotion; info?: Coi
   const { network } = useSettings()
   const change = info?.change24h
   return (
-    <div className={promo.featured ? 'card promo-card featured' : 'card promo-card'}>
+    <div className={`card promo-card tier-${promo.tier}${promo.featured ? ' featured' : ''}`}>
       <div className="promo-top">
         <span className="promo-rank">#{rank}</span>
-        <span className={promo.featured ? 'promo-badge star' : 'promo-badge'}>
-          {promo.featured ? '⭐ Featured' : '🔥 Promoted'}
+        <span className={`promo-badge ${promo.tier}`} title={promo.featured ? 'Featured by CoinForge' : undefined}>
+          {TIERS[promo.tier].badge}
           {promo.boosts > 1 ? ` ×${promo.boosts}` : ''}
+          {promo.featured ? ' · ⭐' : ''}
         </span>
         <span className="muted promo-left">{timeLeft(promo.expiresAt)}</span>
       </div>
@@ -134,6 +147,7 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
   const owner = isOwner(wallet.publicKey)
   const myTokens = useMemo(() => (wallet.publicKey ? getTokens(wallet.publicKey.toBase58(), network) : []), [wallet.publicKey, network])
   const [mint, setMint] = useState(initialMint || myTokens[0]?.mint || '')
+  const [tier, setTier] = useState<TierId>('boost')
   const [preview, setPreview] = useState<CoinInfo | null>(null)
   const [previewSafety, setPreviewSafety] = useState<MintSafety | undefined>()
   const [mintError, setMintError] = useState('')
@@ -170,7 +184,7 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
     setBusy(true)
     setError('')
     try {
-      const tx = buildPromoteTx(wallet.publicKey, mint, network, getReferrer(wallet.publicKey))
+      const tx = buildPromoteTx(wallet.publicKey, mint, network, getReferrer(wallet.publicKey), tier)
       const latest = await connection.getLatestBlockhash('confirmed')
       tx.recentBlockhash = latest.blockhash
       tx.feePayer = wallet.publicKey
@@ -191,8 +205,8 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
       <div className="modal card" onClick={(e) => e.stopPropagation()}>
         <h3>🔥 Promote your coin</h3>
         <p className="hint">
-          Your coin goes to the top of the CoinForge homepage for {PROMO_HOURS} hours. Paying again extends the time and
-          bumps it back to #1.
+          Your coin is listed on the CoinForge homepage for {PROMO_HOURS} hours. Higher tiers rank higher; paying again
+          extends the time and stacks your boost.
         </p>
         <label className="field">
           <span>Token mint address</span>
@@ -223,10 +237,19 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
             </div>
           </div>
         )}
+        <div className="tier-grid">
+          {(Object.keys(TIERS) as TierId[]).map((t) => (
+            <button key={t} className={`tier-option ${t}${tier === t ? ' selected' : ''}`} onClick={() => setTier(t)}>
+              <span className="tier-name">{TIERS[t].badge}</span>
+              <strong>{owner ? 'Free' : `${TIERS[t].sol} SOL`}</strong>
+              <small>{TIERS[t].perk}</small>
+            </button>
+          ))}
+        </div>
         <div className="summary">
           <div>
             <span>Price</span>
-            <strong>{owner ? 'Free (your ad space)' : `${PROMO_SOL} SOL`}</strong>
+            <strong>{owner ? 'Free (your ad space)' : `${TIERS[tier].sol} SOL`}</strong>
             {!owner && getReferrer(wallet.publicKey) && <small className="ok-text">🤝 {REF_PERCENT}% to your referrer</small>}
           </div>
           <div>
@@ -259,7 +282,7 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
               Cancel
             </button>
             <button className="btn primary" disabled={busy || (!!wallet.publicKey && !preview)} onClick={submit}>
-              {!wallet.publicKey ? 'Connect Wallet' : busy ? 'Confirming…' : owner ? 'Promote for free' : `Pay ${PROMO_SOL} SOL & promote`}
+              {!wallet.publicKey ? 'Connect Wallet' : busy ? 'Confirming…' : owner ? 'Promote for free' : `Pay ${TIERS[tier].sol} SOL & promote`}
             </button>
           </div>
         )}
@@ -308,7 +331,7 @@ export default function Promoted() {
           Promoted Memecoins <span className="accent">🔥</span>
         </h1>
         <p>
-          Fresh Solana coins, promoted by their creators. Get yours to the top for {PROMO_SOL} SOL · {PROMO_HOURS}h.
+          Fresh Solana coins, promoted by their creators. Get listed from {PROMO_SOL} SOL · {PROMO_HOURS}h — or grab the 👑 Top Spot.
         </p>
         <div className="row center wrap hero-actions">
           <button className="btn primary" disabled={!promotionsEnabled()} onClick={() => setDialog('')}>

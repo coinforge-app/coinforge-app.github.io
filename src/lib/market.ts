@@ -143,6 +143,17 @@ export function safetyFlags(info?: CoinInfo, s?: MintSafety): Flag[] {
   return flags
 }
 
+const WSOL = 'So11111111111111111111111111111111111111112'
+
+/** SOL price in USD from the most liquid SOL pair on DexScreener. */
+export async function fetchSolPrice(): Promise<number | null> {
+  const pairs = (await (await fetch(`https://api.dexscreener.com/tokens/v1/solana/${WSOL}`)).json()) as DexPair[]
+  const best = pairs
+    .filter((p) => p.baseToken.address === WSOL && p.priceUsd)
+    .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0]
+  return best ? Number(best.priceUsd) : null
+}
+
 export function usd(n?: number) {
   if (n === undefined || !Number.isFinite(n)) return '—'
   if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`

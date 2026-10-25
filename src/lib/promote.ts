@@ -10,15 +10,34 @@ import {
   type ParsedTransactionWithMeta,
 } from '@solana/web3.js'
 import { splitFee } from './referral'
-import { FEE_WALLET, PROMO_BLOCKLIST, PROMO_HOURS, PROMO_SOL, REF_PERCENT, type Network } from './settings'
+import {
+  FEE_WALLET,
+  PROMO_BLOCKLIST,
+  PROMO_BOOST_SOL,
+  PROMO_HOURS,
+  PROMO_SOL,
+  PROMO_TOP_SOL,
+  REF_PERCENT,
+  type Network,
+} from './settings'
 
 // Promotions live entirely on-chain: a payment to FEE_WALLET carrying a memo
-// "coinforge:promote:<mint>". The homepage reads the fee wallet's history, so no backend is needed.
+// "coinforge:promote:<mint>:<tier>". The homepage reads the fee wallet's history, so no backend is needed.
 
 export const MEMO_PROGRAM = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 const MEMO_PREFIX = 'coinforge:promote:'
-export const MEMO_RE = /coinforge:promote:([1-9A-HJ-NP-Za-km-z]{32,44})/
-const PRICE_LAMPORTS = Math.round(PROMO_SOL * LAMPORTS_PER_SOL)
+export const MEMO_RE = /coinforge:promote:([1-9A-HJ-NP-Za-km-z]{32,44})(?::(basic|boost|top))?/
+
+export type TierId = 'basic' | 'boost' | 'top'
+export const TIERS: Record<TierId, { label: string; badge: string; sol: number; points: number; rank: number; perk: string }> = {
+  basic: { label: 'Basic', badge: '🔥 Promoted', sol: PROMO_SOL, points: 1, rank: 1, perk: 'Listed on the homepage' },
+  boost: { label: 'Boost', badge: '⚡ Boosted', sol: PROMO_BOOST_SOL, points: 3, rank: 2, perk: 'Ranked above all basic coins' },
+  top: { label: 'Top Spot', badge: '👑 Top Spot', sol: PROMO_TOP_SOL, points: 10, rank: 3, perk: 'Pinned to #1 with a gold frame' },
+}
+const TIER_ORDER: TierId[] = ['basic', 'boost', 'top']
+const lamportsOf = (tier: TierId) => Math.round(TIERS[tier].sol * LAMPORTS_PER_SOL)
+/** Minimum the fee wallet must receive for a tier (the referral share may go elsewhere) */
+const minReceived = (tier: TierId) => Math.floor((lamportsOf(tier) * (100 - REF_PERCENT)) / 100)
 const LOOKBACK_SECONDS = 7 * 24 * 3600
 const MAX_PAGES = 5
 
@@ -34,6 +53,10 @@ export interface Promotion {
   boosts: number
   /** Promoted by the platform owner (fee wallet) */
   featured: boolean
+  /** Highest tier among payments still inside their own window */
+  tier: TierId
+  /** Sum of tier points of active payments (ranking within a tier) */
+  points: number
 }
 
 export function promotionsEnabled() {
@@ -58,7 +81,13 @@ export async function checkMint(connection: Connection, mint: string) {
 }
 
 /** Memo + payment to the fee wallet (split with a referrer). The owner only writes the memo (free). */
-export function buildPromoteTx(payer: PublicKey, mint: string, network: Network, referrer: PublicKey | null = null) {
+export function buildPromoteTx(
+  payer: PublicKey,
+  mint: string,
+  network: Network,
+  referrer: PublicKey | null = null,
+  tier: TierId = 'basic',
+) {
   const tx = new Transaction()
   if (network === 'mainnet') {
     // Memo program alone uses ~37k CU; keep headroom
@@ -66,7 +95,7 @@ export function buildPromoteTx(payer: PublicKey, mint: string, network: Network,
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 }))
   }
   if (!isOwner(payer)) {
-    for (const p of splitFee(PRICE_LAMPORTS, referrer)) {
+    for (const p of splitFee(lamportsOf(tier), referrer)) {
       tx.add(SystemProgram.transfer({ fromPubkey: payer, toPubkey: p.to, lamports: p.lamports }))
     }
   }
@@ -74,7 +103,7 @@ export function buildPromoteTx(payer: PublicKey, mint: string, network: Network,
     new TransactionInstruction({
       programId: MEMO_PROGRAM,
       keys: [{ pubkey: payer, isSigner: true, isWritable: false }],
-      data: Buffer.from(MEMO_PREFIX + mint, 'utf8'),
+      data: Buffer.from(`${MEMO_PREFIX}${mint}:${tier}`, 'utf8'),
     }),
   )
   return tx
@@ -107,14 +136,21 @@ export async function fetchParsed(connection: Connection, signatures: string[]) 
   return out
 }
 
-/** A memo only counts if the fee wallet received the price (minus the referral share), or signed it itself. */
-function isValidPayment(tx: ParsedTransactionWithMeta | null, feeWallet: string) {
-  if (!tx?.meta || tx.meta.err) return false
+/**
+ * The tier a payment actually bought, or null if it doesn't count. The fee wallet must have received
+ * at least the tier price minus the referral share; the owner (signing itself) gets the memo's tier for free.
+ */
+function paidTier(tx: ParsedTransactionWithMeta | null, feeWallet: string, memoTier: TierId | undefined): TierId | null {
+  if (!tx?.meta || tx.meta.err) return null
   const keys = tx.transaction.message.accountKeys
   const idx = keys.findIndex((k) => k.pubkey.toBase58() === feeWallet)
-  if (idx < 0) return false
-  if (idx === 0 && keys[0].signer) return true
-  return tx.meta.postBalances[idx] - tx.meta.preBalances[idx] >= Math.floor((PRICE_LAMPORTS * (100 - REF_PERCENT)) / 100)
+  if (idx < 0) return null
+  if (idx === 0 && keys[0].signer) return memoTier ?? 'basic'
+  const received = tx.meta.postBalances[idx] - tx.meta.preBalances[idx]
+  const affordable = TIER_ORDER.filter((t) => received >= minReceived(t)).pop()
+  if (!affordable) return null
+  // Never grant more than the memo asked for (older memos without a tier count by amount)
+  return memoTier && TIERS[memoTier].rank < TIERS[affordable].rank ? memoTier : affordable
 }
 
 export async function fetchPromotions(connection: Connection): Promise<Promotion[]> {
@@ -124,35 +160,47 @@ export async function fetchPromotions(connection: Connection): Promise<Promotion
   if (!sigs.length) return []
   const parsed = await fetchParsed(connection, sigs.map((s) => s.signature))
 
+  const window = PROMO_HOURS * 3600
   const payments = sigs
-    .map((s, i) => ({ sig: s, tx: parsed[i] }))
-    .filter(({ tx }) => isValidPayment(tx, FEE_WALLET))
-    .map(({ sig, tx }) => ({
-      mint: MEMO_RE.exec(sig.memo!)![1],
+    .map((s, i) => {
+      const [, mint, memoTier] = MEMO_RE.exec(s.memo!)!
+      const tx = parsed[i]
+      return { sig: s, tx, mint, tier: paidTier(tx, FEE_WALLET, memoTier as TierId | undefined) }
+    })
+    .filter((p) => p.tier !== null)
+    .map(({ sig, tx, mint, tier }) => ({
+      mint,
+      tier: tier!,
       signature: sig.signature,
       paidAt: sig.blockTime ?? tx!.blockTime ?? now,
       featured: tx!.transaction.message.accountKeys[0].pubkey.toBase58() === FEE_WALLET,
     }))
     .sort((a, b) => a.paidAt - b.paidAt)
 
-  // Each payment buys PROMO_HOURS; payments during an active run extend it
+  // Each payment lists the coin for PROMO_HOURS (payments during a run extend it).
+  // Tier and points only count while that payment's own window is still open.
   const byMint = new Map<string, Promotion>()
   for (const p of payments) {
     const prev = byMint.get(p.mint)
     const running = prev && prev.expiresAt > p.paidAt
+    const active = p.paidAt + window > now
+    const base = running ? prev : undefined
+    const tier = active && (!base || TIERS[p.tier].rank > TIERS[base.tier].rank) ? p.tier : (base?.tier ?? 'basic')
     byMint.set(p.mint, {
       mint: p.mint,
       signature: p.signature,
       paidAt: p.paidAt,
-      expiresAt: (running ? prev.expiresAt : p.paidAt) + PROMO_HOURS * 3600,
+      expiresAt: (running ? prev.expiresAt : p.paidAt) + window,
       boosts: running ? prev.boosts + 1 : 1,
       featured: p.featured || (running ? prev.featured : false),
+      tier,
+      points: (base?.points ?? 0) + (active ? TIERS[p.tier].points : 0),
     })
   }
 
   return [...byMint.values()]
     .filter((p) => p.expiresAt > now && !PROMO_BLOCKLIST.has(p.mint))
-    .sort((a, b) => b.paidAt - a.paidAt)
+    .sort((a, b) => TIERS[b.tier].rank - TIERS[a.tier].rank || b.points - a.points || b.paidAt - a.paidAt)
 }
 
 export function timeLeft(expiresAt: number) {

@@ -3,6 +3,7 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey } from '@solana/web3.js'
 import type { ApiCpmmConfigInfo, Raydium } from '@raydium-io/raydium-sdk-v2'
 import Decimal from 'decimal.js'
+import { fetchSolPrice, usd } from '../lib/market'
 import {
   createPool,
   findPoolsForMint,
@@ -45,6 +46,9 @@ function CreatePoolCard({ raydium, onCreated }: { raydium: Raydium; onCreated: (
   const [solBalance, setSolBalance] = useState(0)
   const [tokenAmount, setTokenAmount] = useState('')
   const [solAmount, setSolAmount] = useState('')
+  // Optional: derive the token amount from a target starting market cap (USD)
+  const [targetMc, setTargetMc] = useState('')
+  const [solUsd, setSolUsd] = useState<number | null>(null)
   const [configs, setConfigs] = useState<ApiCpmmConfigInfo[]>([])
   const [configId, setConfigId] = useState('')
   const [busy, setBusy] = useState(false)
@@ -101,6 +105,24 @@ function CreatePoolCard({ raydium, onCreated }: { raydium: Raydium; onCreated: (
     }
   }, [tokenAmount, solAmount])
   const supplyHuman = info ? Number(fromRaw(info.supply, info.decimals)) : 0
+
+  useEffect(() => {
+    fetchSolPrice().then(setSolUsd).catch(() => setSolUsd(null))
+  }, [])
+
+  // tokens in pool = supply × (SOL in pool × SOL price) / target market cap
+  useEffect(() => {
+    if (!info || !solUsd || !Number(targetMc) || !Number(solAmount)) return
+    const tokens = new Decimal(supplyHuman).mul(solAmount).mul(solUsd).div(targetMc)
+    setTokenAmount(tokens.toDecimalPlaces(info.decimals, Decimal.ROUND_DOWN).toString())
+  }, [targetMc, solAmount, solUsd, supplyHuman, info])
+
+  const startMcUsd = price && supplyHuman && solUsd ? price.mul(supplyHuman).mul(solUsd).toNumber() : null
+  // Share of the total supply still sitting in the creator's wallet after the pool is created
+  const keptPct =
+    info && supplyHuman && tokenAmount
+      ? Math.max(0, new Decimal(balance).minus(tokenAmount || 0).div(supplyHuman).mul(100).toNumber())
+      : null
   const createFee = config ? Number(config.createPoolFee) / 1e9 : 0
   const knownSymbol = myTokens.find((t) => t.mint === mint)?.symbol
 
@@ -168,6 +190,18 @@ function CreatePoolCard({ raydium, onCreated }: { raydium: Raydium; onCreated: (
         </div>
       )}
 
+      <label className="field">
+        <span>
+          🎯 Target start market cap <small className="muted">(optional · USD{solUsd ? ` · 1 SOL ≈ $${solUsd.toFixed(2)}` : ''})</small>
+        </span>
+        <input
+          inputMode="decimal"
+          placeholder="e.g. 15000 — fills the token amount for you"
+          value={targetMc}
+          onChange={(e) => setTargetMc(e.target.value.replace(/[^\d.]/g, ''))}
+        />
+      </label>
+
       <div className="grid2">
         <label className="field">
           <span>
@@ -177,9 +211,10 @@ function CreatePoolCard({ raydium, onCreated }: { raydium: Raydium; onCreated: (
                 {[25, 50, 75, 100].map((p) => (
                   <button
                     key={p}
-                    onClick={() =>
+                    onClick={() => {
+                      setTargetMc('')
                       setTokenAmount(new Decimal(balance).mul(p).div(100).toDecimalPlaces(info.decimals, Decimal.ROUND_DOWN).toString())
-                    }
+                    }}
                   >
                     {p === 100 ? 'MAX' : `${p}%`}
                   </button>
@@ -187,7 +222,15 @@ function CreatePoolCard({ raydium, onCreated }: { raydium: Raydium; onCreated: (
               </span>
             )}
           </span>
-          <input inputMode="decimal" placeholder="0" value={tokenAmount} onChange={(e) => setTokenAmount(e.target.value)} />
+          <input
+            inputMode="decimal"
+            placeholder="0"
+            value={tokenAmount}
+            onChange={(e) => {
+              setTargetMc('')
+              setTokenAmount(e.target.value)
+            }}
+          />
         </label>
         <label className="field">
           <span>
@@ -215,8 +258,17 @@ function CreatePoolCard({ raydium, onCreated }: { raydium: Raydium; onCreated: (
           <strong>{price ? `${fmt(price.toString(), 12)} SOL` : '—'}</strong>
         </div>
         <div>
-          <span>Initial FDV</span>
-          <strong>{price && supplyHuman ? `${fmt(price.mul(supplyHuman).toString(), 2)} SOL` : '—'}</strong>
+          <span>Start market cap</span>
+          <strong>
+            {price && supplyHuman ? `${fmt(price.mul(supplyHuman).toString(), 2)} SOL` : '—'}
+            {startMcUsd !== null && <small> ≈ {usd(startMcUsd)}</small>}
+          </strong>
+        </div>
+        <div>
+          <span>You keep in your wallet</span>
+          <strong className={keptPct !== null && keptPct > 20 ? 'warn-text' : ''}>
+            {keptPct !== null ? `${keptPct.toFixed(1)}% of supply` : '—'}
+          </strong>
         </div>
         <div>
           <span>Raydium pool fee</span>
@@ -224,6 +276,13 @@ function CreatePoolCard({ raydium, onCreated }: { raydium: Raydium; onCreated: (
         </div>
       </div>
 
+      {keptPct !== null && keptPct > 20 && (
+        <Status kind="info">
+          ⚠ After launch you still hold {keptPct.toFixed(1)}% of the supply. A high start market cap with little liquidity
+          only works because most tokens stay with you — buyers and scanners see this in the top holders, and it is the
+          most common rug-pull warning sign. Consider putting more tokens in the pool or burning the rest.
+        </Status>
+      )}
       {info?.freezeAuthority && (
         <Status kind="info">⚠ Freeze authority is still active — traders and scanners will flag this token.</Status>
       )}

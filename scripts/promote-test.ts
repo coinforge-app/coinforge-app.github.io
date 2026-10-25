@@ -18,11 +18,14 @@ const check = (ok: boolean, msg: string) => {
 }
 
 const { buildPromoteTx, fetchPromotions, checkMint } = await import('../src/lib/promote')
+const SYSTEM = new PublicKey('11111111111111111111111111111111')
+const transfersOf = (tx: { instructions: { programId: PublicKey; keys: { pubkey: PublicKey }[]; data: Buffer }[] }) =>
+  tx.instructions.filter((i) => i.programId.equals(SYSTEM)).map((i) => ({ to: i.keys[1].pubkey.toBase58(), lamports: Number(i.data.readBigUInt64LE(4)) }))
 const connection = new Connection(RPC, 'confirmed')
 
 // ---- 1. On-chain simulation ----
-async function simulate(label: string, payer: PublicKey, referrer: PublicKey | null = null) {
-  const tx = buildPromoteTx(payer, BONK, 'mainnet', referrer)
+async function simulate(label: string, payer: PublicKey, referrer: PublicKey | null = null, tier: 'basic' | 'boost' | 'top' = 'basic') {
+  const tx = buildPromoteTx(payer, BONK, 'mainnet', referrer, tier)
   const { blockhash } = await connection.getLatestBlockhash()
   const msg = new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions: tx.instructions }).compileToV0Message()
   const res = await connection.simulateTransaction(new VersionedTransaction(msg), { sigVerify: false, replaceRecentBlockhash: true })
@@ -69,6 +72,12 @@ check(
 )
 const selfRef = buildPromoteTx(user, BONK, 'mainnet', null)
 check(selfRef.instructions.filter((i) => i.programId.equals(new PublicKey('11111111111111111111111111111111'))).length === 1, 'no referrer → single 0.05 SOL transfer')
+const boostRef = transfersOf(buildPromoteTx(user, BONK, 'mainnet', referrer, 'boost'))
+check(boostRef[0]?.lamports === 84_000_000 && boostRef[1]?.lamports === 36_000_000, `boost 0.12 SOL with referral → 0.084 / 0.036 (${JSON.stringify(boostRef.map((t) => t.lamports))})`)
+const topTx = buildPromoteTx(user, BONK, 'mainnet', null, 'top')
+check(transfersOf(topTx)[0]?.lamports === 250_000_000, 'top spot → 0.25 SOL')
+check(topTx.instructions.some((i) => i.data.toString('utf8') === `coinforge:promote:${BONK}:top`), 'memo carries the tier')
+await simulate('top spot purchase', user, null, 'top')
 const ownerTx = buildPromoteTx(new PublicKey(FEE), BONK, 'mainnet')
 check(!ownerTx.instructions.some((i) => i.programId.equals(new PublicKey('11111111111111111111111111111111'))), 'owner tx has no transfer (free)')
 const feeBal = await connection.getBalance(new PublicKey(FEE))
@@ -80,8 +89,8 @@ const now = Math.floor(Date.now() / 1000)
 const H = 3600
 const feeKey = new PublicKey(FEE)
 const userKey = Keypair.generate().publicKey
-const mints = Array.from({ length: 6 }, () => Keypair.generate().publicKey.toBase58())
-type Fake = { sig: string; mint: string; payer: PublicKey; lamports: number; at: number; err?: boolean }
+const mints = Array.from({ length: 9 }, () => Keypair.generate().publicKey.toBase58())
+type Fake = { sig: string; mint: string; payer: PublicKey; lamports: number; at: number; err?: boolean; tier?: string }
 const fakes: Fake[] = [
   { sig: 'paid', mint: mints[0], payer: userKey, lamports: 0.05e9, at: now - 2 * H },
   { sig: 'underpaid', mint: mints[1], payer: userKey, lamports: 0.01e9, at: now - 1 * H },
@@ -91,13 +100,16 @@ const fakes: Fake[] = [
   { sig: 'stack2', mint: mints[4], payer: userKey, lamports: 0.05e9, at: now - 10 * H },
   { sig: 'failed', mint: mints[1], payer: userKey, lamports: 0.05e9, at: now - 1 * H, err: true },
   { sig: 'referred', mint: mints[5], payer: userKey, lamports: 0.035e9, at: now - 0.5 * H },
+  { sig: 'top', mint: mints[6], payer: userKey, lamports: 0.25e9, at: now - 5 * H, tier: 'top' },
+  { sig: 'boost', mint: mints[7], payer: userKey, lamports: 0.084e9, at: now - 4 * H, tier: 'boost' },
+  { sig: 'cheater', mint: mints[8], payer: userKey, lamports: 0.05e9, at: now - 0.2 * H, tier: 'top' },
 ]
 const fakeConnection = {
   getSignaturesForAddress: async () =>
     fakes
       .slice()
       .sort((a, b) => b.at - a.at)
-      .map((f) => ({ signature: f.sig, slot: 0, err: f.err ? {} : null, memo: `[60] coinforge:promote:${f.mint}`, blockTime: f.at })),
+      .map((f) => ({ signature: f.sig, slot: 0, err: f.err ? {} : null, memo: `[60] coinforge:promote:${f.mint}${f.tier ? ':' + f.tier : ''}`, blockTime: f.at })),
   getParsedTransactions: async (list: string[]) =>
     list.map((sig) => {
       const f = fakes.find((x) => x.sig === sig)!
@@ -124,7 +136,10 @@ check(!!by[mints[2]]?.featured, 'owner memo without payment → listed as featur
 check(!by[mints[3]], 'payment older than 24h → expired')
 check(by[mints[4]]?.boosts === 2 && by[mints[4]].expiresAt === now - 20 * H + 48 * H, 'two overlapping payments → stacked to 48h, boosts ×2')
 check(!!by[mints[5]], 'referred payment (70% to fee wallet) → listed')
-check(list[0]?.mint === mints[5], 'newest payment ranks #1')
+check(by[mints[6]]?.tier === 'top', 'paid 0.25 SOL → 👑 Top Spot')
+check(by[mints[7]]?.tier === 'boost', 'referred boost (0.084 to fee wallet) → ⚡ Boost')
+check(by[mints[8]]?.tier === 'basic', 'memo claims top but paid 0.05 → only Basic')
+check(list[0]?.mint === mints[6] && list[1]?.mint === mints[7], 'Top Spot ranks #1, Boost #2 (despite older payments)')
 
 // ---- 3. Earnings dashboard classification ----
 const { fetchEarnings } = await import('../src/lib/earnings')
