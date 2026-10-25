@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buildPromoteTx, checkMint, fetchPromotions, isOwner, promotionsEnabled, timeLeft, type Promotion } from '../lib/promote'
-import { fetchCoinInfo, usd, type CoinInfo } from '../lib/market'
+import { fetchCoinInfo, fetchMintSafety, safetyFlags, usd, type CoinInfo, type MintSafety } from '../lib/market'
 import { explorerUrl, PROMO_HOURS, PROMO_SOL, useSettings } from '../lib/settings'
 import { getTokens } from '../lib/storage'
 import { CopyButton, errorMessage, short, Status } from '../lib/ui'
@@ -38,7 +38,21 @@ function CoinAvatar({ info }: { info?: CoinInfo }) {
   )
 }
 
-function PromoCard({ promo, info, rank }: { promo: Promotion; info?: CoinInfo; rank: number }) {
+function SafetyFlags({ info, safety }: { info?: CoinInfo; safety?: MintSafety }) {
+  const flags = safetyFlags(info, safety)
+  if (!flags.length) return null
+  return (
+    <div className="flags">
+      {flags.map((f) => (
+        <span key={f.text} className={`flag ${f.level}`} title={f.title}>
+          {f.level === 'ok' ? '✓' : '⚠'} {f.text}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function PromoCard({ promo, info, safety, rank }: { promo: Promotion; info?: CoinInfo; safety?: MintSafety; rank: number }) {
   const { network } = useSettings()
   const change = info?.change24h
   return (
@@ -81,6 +95,7 @@ function PromoCard({ promo, info, rank }: { promo: Promotion; info?: CoinInfo; r
           <strong>{usd(info?.volume24h)}</strong>
         </div>
       </div>
+      <SafetyFlags info={info} safety={safety} />
       <div className="promo-ca">
         <code>{short(promo.mint, 6)}</code> <CopyButton text={promo.mint} />
       </div>
@@ -119,6 +134,7 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
   const myTokens = useMemo(() => (wallet.publicKey ? getTokens(wallet.publicKey.toBase58(), network) : []), [wallet.publicKey, network])
   const [mint, setMint] = useState(initialMint || myTokens[0]?.mint || '')
   const [preview, setPreview] = useState<CoinInfo | null>(null)
+  const [previewSafety, setPreviewSafety] = useState<MintSafety | undefined>()
   const [mintError, setMintError] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -136,8 +152,12 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
     if (mint.length < 32) return
     let cancelled = false
     checkMint(connection, mint)
-      .then(() => fetchCoinInfo(rpc, [mint]))
-      .then((info) => !cancelled && setPreview(info[mint]))
+      .then(() => Promise.all([fetchCoinInfo(rpc, [mint]), fetchMintSafety(connection, [mint])]))
+      .then(([info, safety]) => {
+        if (cancelled) return
+        setPreview(info[mint])
+        setPreviewSafety(safety[mint])
+      })
       .catch((e) => !cancelled && setMintError(errorMessage(e)))
     return () => {
       cancelled = true
@@ -190,6 +210,7 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
           </div>
         </label>
         {mintError && <p className="warn-text">{mintError}</p>}
+        {preview && <SafetyFlags info={preview} safety={previewSafety} />}
         {preview && (
           <div className="promo-preview">
             <CoinAvatar info={preview} />
@@ -251,6 +272,7 @@ export default function Promoted() {
   const { rpc, network } = useSettings()
   const [promos, setPromos] = useState<Promotion[] | null>(null)
   const [coins, setCoins] = useState<Record<string, CoinInfo>>({})
+  const [safety, setSafety] = useState<Record<string, MintSafety>>({})
   const [error, setError] = useState('')
   const [dialog, setDialog] = useState<string | null>(() => (hashParam('promote') ? hashParam('promote') : null))
 
@@ -260,7 +282,10 @@ export default function Promoted() {
         import.meta.env.DEV && location.search.includes('demo') ? demoPromotions() : await fetchPromotions(connection)
       setPromos(list)
       setError('')
-      setCoins(await fetchCoinInfo(rpc, list.map((p) => p.mint)))
+      const mints = list.map((p) => p.mint)
+      const [info, checks] = await Promise.all([fetchCoinInfo(rpc, mints), fetchMintSafety(connection, mints).catch(() => ({}))])
+      setCoins(info)
+      setSafety(checks)
     } catch (e) {
       setError(errorMessage(e))
       setPromos((p) => p ?? [])
@@ -313,7 +338,7 @@ export default function Promoted() {
       ) : (
         <div className="promo-grid">
           {promos.map((p, i) => (
-            <PromoCard key={p.mint} promo={p} info={coins[p.mint]} rank={i + 1} />
+            <PromoCard key={p.mint} promo={p} info={coins[p.mint]} safety={safety[p.mint]} rank={i + 1} />
           ))}
         </div>
       )}

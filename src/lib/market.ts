@@ -1,4 +1,5 @@
 // Display data for promoted coins: on-chain metadata via DAS (Helius) + market stats via DexScreener.
+import { PublicKey, type Connection } from '@solana/web3.js'
 
 export interface CoinInfo {
   mint: string
@@ -11,6 +12,8 @@ export interface CoinInfo {
   volume24h?: number
   change24h?: number
   pairUrl?: string
+  /** Metadata can still be changed by its update authority (from DAS) */
+  mutable?: boolean
 }
 
 interface DexPair {
@@ -42,6 +45,7 @@ async function fetchDexScreener(mints: string[]) {
 
 interface DasAsset {
   id: string
+  mutable?: boolean
   content?: { metadata?: { name?: string; symbol?: string }; links?: { image?: string }; files?: { uri?: string }[] }
 }
 
@@ -78,9 +82,65 @@ export async function fetchCoinInfo(rpc: string, mints: string[]): Promise<Recor
       volume24h: p?.volume?.h24,
       change24h: p?.priceChange?.h24,
       pairUrl: p?.url,
+      mutable: a?.mutable,
     }
   }
   return result
+}
+
+export interface MintSafety {
+  mintAuthority: boolean
+  freezeAuthority: boolean
+  permanentDelegate: boolean
+  transferFee: boolean
+}
+
+interface ParsedMint {
+  mintAuthority: string | null
+  freezeAuthority: string | null
+  extensions?: { extension: string; state?: { delegate?: string | null; newerTransferFee?: { transferFeeBasisPoints?: number } } }[]
+}
+
+/** Authority + Token-2022 extension checks straight from the mint accounts (one RPC call per 100 mints). */
+export async function fetchMintSafety(connection: Connection, mints: string[]): Promise<Record<string, MintSafety>> {
+  const out: Record<string, MintSafety> = {}
+  for (let i = 0; i < mints.length; i += 100) {
+    const chunk = mints.slice(i, i + 100)
+    const res = await connection.getMultipleParsedAccounts(chunk.map((m) => new PublicKey(m)))
+    res.value.forEach((acc, j) => {
+      const data = acc?.data
+      if (!data || !('parsed' in data) || data.parsed.type !== 'mint') return
+      const info = data.parsed.info as ParsedMint
+      const ext = (name: string) => info.extensions?.find((e) => e.extension === name)
+      out[chunk[j]] = {
+        mintAuthority: !!info.mintAuthority,
+        freezeAuthority: !!info.freezeAuthority,
+        permanentDelegate: !!ext('permanentDelegate')?.state?.delegate,
+        transferFee: (ext('transferFeeConfig')?.state?.newerTransferFee?.transferFeeBasisPoints ?? 0) > 0,
+      }
+    })
+  }
+  return out
+}
+
+export type Flag = { level: 'bad' | 'warn' | 'ok'; text: string; title: string }
+
+export function safetyFlags(info?: CoinInfo, s?: MintSafety): Flag[] {
+  const flags: Flag[] = []
+  if (s) {
+    if (s.permanentDelegate)
+      flags.push({ level: 'bad', text: 'Permanent delegate', title: 'Token-2022: the creator can move or burn tokens in any wallet' })
+    if (s.mintAuthority) flags.push({ level: 'bad', text: 'Mint active', title: 'The creator can still mint unlimited new tokens' })
+    if (s.freezeAuthority) flags.push({ level: 'bad', text: 'Freeze active', title: 'The creator can freeze holder wallets (honeypot risk)' })
+    if (s.transferFee) flags.push({ level: 'warn', text: 'Transfer tax', title: 'Token-2022: a fee is taken on every transfer' })
+  }
+  if (info && info.liquidityUsd === undefined) flags.push({ level: 'warn', text: 'No pool', title: 'No liquidity pool found on DexScreener yet' })
+  else if (info?.liquidityUsd !== undefined && info.liquidityUsd < 5000)
+    flags.push({ level: 'warn', text: 'Low liquidity', title: 'Less than $5K liquidity: large price impact, easy to manipulate' })
+  if (info?.mutable) flags.push({ level: 'warn', text: 'Metadata changeable', title: 'Name, logo and links can still be changed' })
+  if (s && !s.mintAuthority && !s.freezeAuthority && !s.permanentDelegate)
+    flags.unshift({ level: 'ok', text: 'Mint & freeze revoked', title: 'Supply is fixed and wallets cannot be frozen' })
+  return flags
 }
 
 export function usd(n?: number) {

@@ -255,3 +255,9 @@ section.info { margin-top: 32px; }
 .promo-empty p { color: var(--muted); }
 .promo-preview { display: flex; align-items: center; gap: 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
 .promo-disclaimer { margin-top: 28px; }
+.flags { display: flex; flex-wrap: wrap; gap: 6px; }
+.flag { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 3px 9px; border: 1px solid; cursor: help; }
+.flag.bad { color: #fecaca; background: rgba(248, 113, 113, .1); border-color: rgba(248, 113, 113, .4); }
+.flag.warn { color: #fde68a; background: rgba(251, 191, 36, .08); border-color: rgba(251, 191, 36, .35); }
+.flag.ok { color: var(--accent); background: rgba(110, 231, 168, .08); border-color: rgba(110, 231, 168, .35); }
+.modal .flags { margin: 4px 0 10px; }
