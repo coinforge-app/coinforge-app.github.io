@@ -2,7 +2,8 @@ import { useMemo, useRef, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { countAddons, createToken, DEFAULT_CREATOR, makeUmi, platformFee, rawAmount, type TokenForm } from '../lib/createToken'
-import { explorerUrl, FEE_ADDON_SOL, FEE_SOL, useSettings } from '../lib/settings'
+import { getReferrer } from '../lib/referral'
+import { explorerUrl, FEE_ADDON_SOL, FEE_SOL, REF_PERCENT, useSettings } from '../lib/settings'
 import { addToken } from '../lib/storage'
 import { CopyButton, errorMessage, Faq, Status, Toggle } from '../lib/ui'
 
@@ -103,7 +104,7 @@ export default function CreateToken() {
     setError('')
     try {
       const umi = makeUmi(rpc, network, wallet)
-      const res = await createToken(umi, network, form, setProgress)
+      const res = await createToken(umi, network, form, setProgress, getReferrer(wallet.publicKey))
       addToken({
         mint: res.mint,
         name: form.name,
@@ -353,6 +354,7 @@ export default function CreateToken() {
                     {fee > 0 ? `${fee.toFixed(2)} SOL` : 'Free'}
                     {FEE_SOL > 0 && addons > 0 && <small> ({addons} add-on{addons > 1 ? 's' : ''})</small>}
                   </strong>
+                  {fee > 0 && getReferrer(wallet.publicKey) && <small className="ok-text">🤝 {REF_PERCENT}% goes to the trader who referred you</small>}
                 </div>
                 <div>
                   <span>Rent + storage (est.)</span>

@@ -9,14 +9,15 @@ import {
   type ConfirmedSignatureInfo,
   type ParsedTransactionWithMeta,
 } from '@solana/web3.js'
-import { FEE_WALLET, PROMO_BLOCKLIST, PROMO_HOURS, PROMO_SOL, type Network } from './settings'
+import { splitFee } from './referral'
+import { FEE_WALLET, PROMO_BLOCKLIST, PROMO_HOURS, PROMO_SOL, REF_PERCENT, type Network } from './settings'
 
 // Promotions live entirely on-chain: a payment to FEE_WALLET carrying a memo
 // "coinforge:promote:<mint>". The homepage reads the fee wallet's history, so no backend is needed.
 
 export const MEMO_PROGRAM = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 const MEMO_PREFIX = 'coinforge:promote:'
-const MEMO_RE = /coinforge:promote:([1-9A-HJ-NP-Za-km-z]{32,44})/
+export const MEMO_RE = /coinforge:promote:([1-9A-HJ-NP-Za-km-z]{32,44})/
 const PRICE_LAMPORTS = Math.round(PROMO_SOL * LAMPORTS_PER_SOL)
 const LOOKBACK_SECONDS = 7 * 24 * 3600
 const MAX_PAGES = 5
@@ -56,8 +57,8 @@ export async function checkMint(connection: Connection, mint: string) {
   return key
 }
 
-/** Memo + payment to the fee wallet. The owner only writes the memo (free). */
-export function buildPromoteTx(payer: PublicKey, mint: string, network: Network) {
+/** Memo + payment to the fee wallet (split with a referrer). The owner only writes the memo (free). */
+export function buildPromoteTx(payer: PublicKey, mint: string, network: Network, referrer: PublicKey | null = null) {
   const tx = new Transaction()
   if (network === 'mainnet') {
     // Memo program alone uses ~37k CU; keep headroom
@@ -65,7 +66,9 @@ export function buildPromoteTx(payer: PublicKey, mint: string, network: Network)
     tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 200_000 }))
   }
   if (!isOwner(payer)) {
-    tx.add(SystemProgram.transfer({ fromPubkey: payer, toPubkey: new PublicKey(FEE_WALLET), lamports: PRICE_LAMPORTS }))
+    for (const p of splitFee(PRICE_LAMPORTS, referrer)) {
+      tx.add(SystemProgram.transfer({ fromPubkey: payer, toPubkey: p.to, lamports: p.lamports }))
+    }
   }
   tx.add(
     new TransactionInstruction({
@@ -90,7 +93,7 @@ async function recentMemoSignatures(connection: Connection, feeWallet: PublicKey
   return found
 }
 
-async function fetchParsed(connection: Connection, signatures: string[]) {
+export async function fetchParsed(connection: Connection, signatures: string[]) {
   const out: (ParsedTransactionWithMeta | null)[] = []
   for (let i = 0; i < signatures.length; i += 50) {
     const chunk = signatures.slice(i, i + 50)
@@ -104,14 +107,14 @@ async function fetchParsed(connection: Connection, signatures: string[]) {
   return out
 }
 
-/** A memo only counts if the fee wallet actually received the price, or signed it itself. */
+/** A memo only counts if the fee wallet received the price (minus the referral share), or signed it itself. */
 function isValidPayment(tx: ParsedTransactionWithMeta | null, feeWallet: string) {
   if (!tx?.meta || tx.meta.err) return false
   const keys = tx.transaction.message.accountKeys
   const idx = keys.findIndex((k) => k.pubkey.toBase58() === feeWallet)
   if (idx < 0) return false
   if (idx === 0 && keys[0].signer) return true
-  return tx.meta.postBalances[idx] - tx.meta.preBalances[idx] >= PRICE_LAMPORTS
+  return tx.meta.postBalances[idx] - tx.meta.preBalances[idx] >= Math.floor((PRICE_LAMPORTS * (100 - REF_PERCENT)) / 100)
 }
 
 export async function fetchPromotions(connection: Connection): Promise<Promotion[]> {

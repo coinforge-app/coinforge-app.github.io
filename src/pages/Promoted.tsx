@@ -3,7 +3,8 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { buildPromoteTx, checkMint, fetchPromotions, isOwner, promotionsEnabled, timeLeft, type Promotion } from '../lib/promote'
 import { fetchCoinInfo, fetchMintSafety, safetyFlags, usd, type CoinInfo, type MintSafety } from '../lib/market'
-import { explorerUrl, PROMO_HOURS, PROMO_SOL, useSettings } from '../lib/settings'
+import { explorerUrl, PROMO_HOURS, PROMO_SOL, REF_PERCENT, useSettings } from '../lib/settings'
+import { getReferrer } from '../lib/referral'
 import { getTokens } from '../lib/storage'
 import { CopyButton, errorMessage, short, Status } from '../lib/ui'
 
@@ -169,7 +170,7 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
     setBusy(true)
     setError('')
     try {
-      const tx = buildPromoteTx(wallet.publicKey, mint, network)
+      const tx = buildPromoteTx(wallet.publicKey, mint, network, getReferrer(wallet.publicKey))
       const latest = await connection.getLatestBlockhash('confirmed')
       tx.recentBlockhash = latest.blockhash
       tx.feePayer = wallet.publicKey
@@ -226,6 +227,7 @@ function PromoteDialog({ initialMint, onClose, onPromoted }: {
           <div>
             <span>Price</span>
             <strong>{owner ? 'Free (your ad space)' : `${PROMO_SOL} SOL`}</strong>
+            {!owner && getReferrer(wallet.publicKey) && <small className="ok-text">🤝 {REF_PERCENT}% to your referrer</small>}
           </div>
           <div>
             <span>Duration</span>

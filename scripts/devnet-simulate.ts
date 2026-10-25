@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/devnet-simulate.ts
  */
-import { Connection, PublicKey, VersionedTransaction, type Transaction } from '@solana/web3.js'
+import { Connection, Keypair, PublicKey, VersionedTransaction, type Transaction } from '@solana/web3.js'
 import { createNoopSigner, generateSigner, publicKey, signerIdentity, sol } from '@metaplex-foundation/umi'
 import { createUmi } from '@metaplex-foundation/umi-bundle-defaults'
 import { mplTokenMetadata } from '@metaplex-foundation/mpl-token-metadata'
@@ -82,7 +82,8 @@ async function main() {
   const uri = 'https://gateway.irys.xyz/' + 'x'.repeat(43)
   for (const network of ['devnet', 'mainnet'] as const) {
     const mint = generateSigner(umi)
-    let builder = buildCreateTokenTx(umi, network, form, mint, uri)
+    // Worst case: platform fee split with a referrer + an extra transfer
+    let builder = buildCreateTokenTx(umi, network, form, mint, uri, Keypair.generate().publicKey)
     // Platform fee is env-driven; add it explicitly to test the largest transaction
     builder = builder.prepend(transferSol(umi, { destination: publicKey(payer.toBase58()), amount: sol(0.001) }))
     const parts = builder.unsafeSplitByTransactionSize(umi)

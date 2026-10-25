@@ -1,9 +1,9 @@
 import {
   createGenericFileFromBrowserFile,
   generateSigner,
+  lamports,
   percentAmount,
   publicKey,
-  sol,
   transactionBuilder,
   type Signer,
   type Umi,
@@ -20,6 +20,8 @@ import {
   transferSol,
 } from '@metaplex-foundation/mpl-toolbox'
 import { base58 } from '@metaplex-foundation/umi/serializers'
+import type { PublicKey as Web3PublicKey } from '@solana/web3.js'
+import { splitFee, toLamports } from './referral'
 import { FEE_ADDON_SOL, FEE_SOL, FEE_WALLET, type Network } from './settings'
 
 export interface TokenForm {
@@ -75,7 +77,13 @@ export function rawAmount(supply: string, decimals: number): bigint {
 
 export type Progress = (step: string) => void
 
-export async function createToken(umi: Umi, network: Network, form: TokenForm, onProgress: Progress) {
+export async function createToken(
+  umi: Umi,
+  network: Network,
+  form: TokenForm,
+  onProgress: Progress,
+  referrer: Web3PublicKey | null = null,
+) {
   if (!form.image) throw new Error('Token image is required')
   rawAmount(form.supply, form.decimals) // validate before uploading anything
 
@@ -104,7 +112,7 @@ export async function createToken(umi: Umi, network: Network, form: TokenForm, o
   })
 
   const mint = generateSigner(umi)
-  const builder = buildCreateTokenTx(umi, network, form, mint, uri)
+  const builder = buildCreateTokenTx(umi, network, form, mint, uri, referrer)
 
   onProgress('Waiting for wallet approval…')
   const signatures: string[] = []
@@ -119,14 +127,24 @@ export async function createToken(umi: Umi, network: Network, form: TokenForm, o
 }
 
 /** Fee transfer + create mint/metadata + mint supply + optional authority revokes. */
-export function buildCreateTokenTx(umi: Umi, network: Network, form: TokenForm, mint: Signer, uri: string) {
+export function buildCreateTokenTx(
+  umi: Umi,
+  network: Network,
+  form: TokenForm,
+  mint: Signer,
+  uri: string,
+  referrer: Web3PublicKey | null = null,
+) {
   const amount = rawAmount(form.supply, form.decimals)
   let builder = transactionBuilder()
   if (network === 'mainnet') builder = builder.add(setComputeUnitPrice(umi, { microLamports: 200_000 }))
 
   const fee = platformFee(form)
   if (fee > 0 && FEE_WALLET) {
-    builder = builder.add(transferSol(umi, { destination: publicKey(FEE_WALLET), amount: sol(fee) }))
+    // Platform fee, split with the referrer (if any) in the same transaction
+    for (const p of splitFee(toLamports(fee), referrer)) {
+      builder = builder.add(transferSol(umi, { destination: publicKey(p.to.toBase58()), amount: lamports(p.lamports) }))
+    }
   }
 
   builder = builder.add(

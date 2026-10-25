@@ -1,20 +1,27 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
-import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react'
+import { ConnectionProvider, useWallet, WalletProvider } from '@solana/wallet-adapter-react'
 import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-react-ui'
-import { DEFAULT_RPC, FEE_ADDON_SOL, FEE_SOL, PROMO_SOL, SettingsProvider, useSettings, type Network } from './lib/settings'
+import { isOwner } from './lib/promote'
+import { DEFAULT_RPC, FEE_ADDON_SOL, FEE_SOL, PROMO_SOL, REF_PERCENT, SettingsProvider, useSettings, type Network } from './lib/settings'
 
 // Pages pull in heavy SDKs (Metaplex/Irys, Raydium) — load each on demand
 const Promoted = lazy(() => import('./pages/Promoted'))
 const CreateToken = lazy(() => import('./pages/CreateToken'))
 const Liquidity = lazy(() => import('./pages/Liquidity'))
 const Tokens = lazy(() => import('./pages/Tokens'))
+const Refer = lazy(() => import('./pages/Refer'))
+const Earnings = lazy(() => import('./pages/Earnings'))
 
 const ROUTES = {
   promoted: { label: '🔥 Promoted', page: Promoted },
   create: { label: 'Create Coin', page: CreateToken },
-  liquidity: { label: 'Manage Liquidity', page: Liquidity },
-  tokens: { label: 'Minted Tokens', page: Tokens },
+  liquidity: { label: 'Liquidity', page: Liquidity },
+  tokens: { label: 'My Tokens', page: Tokens },
+  refer: { label: `🤝 Earn ${REF_PERCENT}%`, page: Refer },
+  earnings: { label: '📊 Earnings', page: Earnings },
 } as const
+// Only shown in the nav to the fee wallet owner
+const OWNER_ONLY: Route[] = ['earnings']
 type Route = keyof typeof ROUTES
 
 function useRoute(): Route {
@@ -104,6 +111,8 @@ function SettingsPanel({ onClose }: { onClose: () => void }) {
 
 function Shell() {
   const route = useRoute()
+  const { publicKey } = useWallet()
+  const owner = isOwner(publicKey)
   const { network, setNetwork } = useSettings()
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -117,7 +126,7 @@ function Shell() {
   return (
     <>
       <div className="announce">
-        🚀 {feeText} • 🔥 Promote your coin from {PROMO_SOL} SOL • Non-custodial
+        🚀 {feeText} • 🔥 Promote your coin from {PROMO_SOL} SOL • 🤝 Refer traders &amp; earn {REF_PERCENT}%
       </div>
       <header className="header">
         <div className="header-inner">
@@ -131,7 +140,9 @@ function Shell() {
             </b>
           </a>
           <nav className={menuOpen ? 'nav open' : 'nav'} onClick={() => setMenuOpen(false)}>
-            {(Object.keys(ROUTES) as Route[]).map((r) => (
+            {(Object.keys(ROUTES) as Route[])
+              .filter((r) => owner || !OWNER_ONLY.includes(r))
+              .map((r) => (
               <a key={r} href={`#/${r}`} className={r === route ? 'active' : ''}>
                 {ROUTES[r].label}
               </a>

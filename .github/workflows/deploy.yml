@@ -37,6 +37,8 @@ jobs:
           VITE_PROMO_SOL: ${{ vars.VITE_PROMO_SOL }}
           VITE_PROMO_HOURS: ${{ vars.VITE_PROMO_HOURS }}
           VITE_PROMO_BLOCKLIST: ${{ vars.VITE_PROMO_BLOCKLIST }}
+          # Referral share of every fee (default 30, max 50)
+          VITE_REF_PERCENT: ${{ vars.VITE_REF_PERCENT }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
