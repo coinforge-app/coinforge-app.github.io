@@ -20,8 +20,9 @@ export const FEE_ADDON_SOL = FEE_WALLET ? Number(env.VITE_FEE_ADDON_SOL ?? 0) ||
 export const PROMO_SOL = Number(env.VITE_PROMO_SOL || 0.05)
 export const PROMO_HOURS = Number(env.VITE_PROMO_HOURS || 24)
 // Share of every platform fee paid instantly to the referrer (?ref=<wallet>)
-export const REF_PERCENT = Math.min(50, Math.max(0, Number(env.VITE_REF_PERCENT ?? 30)))
-export const PROMO_BLOCKLIST =new Set((env.VITE_PROMO_BLOCKLIST || '').split(',').map((s) => s.trim()).filter(Boolean))
+// (CI passes unset repository variables as empty strings, so '' means "use the default")
+export const REF_PERCENT = Math.min(50, Math.max(0, Number(env.VITE_REF_PERCENT?.trim() || 30)))
+export const PROMO_BLOCKLIST = new Set((env.VITE_PROMO_BLOCKLIST || '').split(',').map((s) => s.trim()).filter(Boolean))
 
 interface Settings {
   network: Network
