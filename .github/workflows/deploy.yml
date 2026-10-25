@@ -38,6 +38,8 @@ jobs:
           VITE_PROMO_HOURS: ${{ vars.VITE_PROMO_HOURS }}
           VITE_PROMO_BOOST_SOL: ${{ vars.VITE_PROMO_BOOST_SOL }}
           VITE_PROMO_TOP_SOL: ${{ vars.VITE_PROMO_TOP_SOL }}
+          # Hours a new launch stays in the free "Just launched" strip (default 6)
+          VITE_LAUNCH_HOURS: ${{ vars.VITE_LAUNCH_HOURS }}
           VITE_PROMO_BLOCKLIST: ${{ vars.VITE_PROMO_BLOCKLIST }}
           # Referral share of every fee (default 30, max 50)
           VITE_REF_PERCENT: ${{ vars.VITE_REF_PERCENT }}

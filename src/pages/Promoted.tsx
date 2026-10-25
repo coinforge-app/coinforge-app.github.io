@@ -12,8 +12,9 @@ import {
   type Promotion,
   type TierId,
 } from '../lib/promote'
+import { ago, fetchLaunches, type Launch } from '../lib/launches'
 import { fetchCoinInfo, fetchMintSafety, safetyFlags, usd, type CoinInfo, type MintSafety } from '../lib/market'
-import { explorerUrl, PROMO_HOURS, PROMO_SOL, REF_PERCENT, useSettings } from '../lib/settings'
+import { explorerUrl, LAUNCH_HOURS, PROMO_HOURS, PROMO_SOL, REF_PERCENT, useSettings } from '../lib/settings'
 import { getReferrer } from '../lib/referral'
 import { getTokens } from '../lib/storage'
 import { CopyButton, errorMessage, short, Status } from '../lib/ui'
@@ -36,6 +37,15 @@ function demoPromotions(): Promotion[] {
     tier: (['top', 'boost', 'basic'] as TierId[])[i],
     points: [10, 6, 1][i],
   }))
+}
+
+function demoLaunches(): Launch[] {
+  const now = Math.floor(Date.now() / 1000)
+  return [
+    { mint: '2qEHjDLDLbuBgRYvsxhc5D6uDWAivNFZGan56P1tpump', creator: '', createdAt: now - 4 * 60, signature: '' },
+    { mint: 'ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82', creator: '', createdAt: now - 52 * 60, signature: '' },
+    { mint: 'A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump', creator: '', createdAt: now - 3 * 3600, signature: '' },
+  ]
 }
 
 function hashParam(name: string) {
@@ -130,6 +140,48 @@ function PromoCard({ promo, info, safety, rank }: { promo: Promotion; info?: Coi
         <a className="btn ghost sm" href={explorerUrl('token', promo.mint, network)} target="_blank" rel="noreferrer">
           Solscan ↗
         </a>
+      </div>
+    </div>
+  )
+}
+
+function LaunchCard({ launch, info, safety, onBoost }: {
+  launch: Launch
+  info?: CoinInfo
+  safety?: MintSafety
+  onBoost: () => void
+}) {
+  const flags = safetyFlags(info, safety).filter((f) => f.level !== 'warn' || f.text === 'No pool')
+  return (
+    <div className="card launch-card">
+      <div className="launch-head">
+        <CoinAvatar info={info} />
+        <div className="promo-name">
+          <strong>{info?.name || short(launch.mint, 4)}</strong>
+          <span className="muted">{info?.symbol ? `$${info.symbol.replace(/^\$/, '')}` : '…'}</span>
+        </div>
+        <span className="launch-age">{ago(launch.createdAt)}</span>
+      </div>
+      <div className="launch-mc">
+        <span>MC</span>
+        <strong>{info?.marketCap ? usd(info.marketCap) : 'No pool yet'}</strong>
+      </div>
+      {flags.length > 0 && (
+        <div className="flags">
+          {flags.slice(0, 2).map((f) => (
+            <span key={f.text} className={`flag ${f.level}`} title={f.title}>
+              {f.level === 'ok' ? '✓' : '⚠'} {f.text}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="row">
+        <a className="btn ghost sm" href={info?.pairUrl || `https://dexscreener.com/solana/${launch.mint}`} target="_blank" rel="noreferrer">
+          Chart ↗
+        </a>
+        <button className="btn primary sm" onClick={onBoost}>
+          🔥 Boost
+        </button>
       </div>
     </div>
   )
@@ -298,16 +350,21 @@ export default function Promoted() {
   const [promos, setPromos] = useState<Promotion[] | null>(null)
   const [coins, setCoins] = useState<Record<string, CoinInfo>>({})
   const [safety, setSafety] = useState<Record<string, MintSafety>>({})
+  const [launches, setLaunches] = useState<Launch[] | null>(null)
   const [error, setError] = useState('')
   const [dialog, setDialog] = useState<string | null>(() => (hashParam('promote') ? hashParam('promote') : null))
 
   const load = useCallback(async () => {
     try {
-      const list =
-        import.meta.env.DEV && location.search.includes('demo') ? demoPromotions() : await fetchPromotions(connection)
+      const demo = import.meta.env.DEV && location.search.includes('demo')
+      const [list, fresh] = await Promise.all([
+        demo ? demoPromotions() : fetchPromotions(connection),
+        demo ? demoLaunches() : fetchLaunches(connection).catch(() => [] as Launch[]),
+      ])
       setPromos(list)
+      setLaunches(fresh)
       setError('')
-      const mints = list.map((p) => p.mint)
+      const mints = [...new Set([...list.map((p) => p.mint), ...fresh.map((l) => l.mint)])]
       const [info, checks] = await Promise.all([fetchCoinInfo(rpc, mints), fetchMintSafety(connection, mints).catch(() => ({}))])
       setCoins(info)
       setSafety(checks)
@@ -346,6 +403,32 @@ export default function Promoted() {
       {!promotionsEnabled() && <Status kind="info">Promotions are not configured on this instance (no fee wallet).</Status>}
       {error && <Status kind="error">Could not load promotions: {error}</Status>}
 
+      <div className="launch-section">
+        <div className="launch-title">
+          <h3>🆕 Just launched</h3>
+          <span className="muted">New coins from CoinForge · free for {LAUNCH_HOURS}h</span>
+        </div>
+        {launches === null ? (
+          <div className="launch-strip">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="card launch-card skeleton" />
+            ))}
+          </div>
+        ) : launches.length === 0 ? (
+          <p className="hint">
+            No new launches in the last {LAUNCH_HOURS} hours — <a href="#/create">create the next one</a> and it shows up here
+            for free.
+          </p>
+        ) : (
+          <div className="launch-strip">
+            {launches.map((l) => (
+              <LaunchCard key={l.mint} launch={l} info={coins[l.mint]} safety={safety[l.mint]} onBoost={() => setDialog(l.mint)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <h3 className="promo-section-title">🔥 Promoted</h3>
       {promos === null ? (
         <div className="promo-grid">
           {[0, 1, 2].map((i) => (

@@ -167,5 +167,34 @@ check(tok?.kind === 'token' && tok.toYou === 0.28e9 && tok.toReferrer === 0.12e9
 check(earnings.find((e) => e.signature === 'promo')?.kind === 'promotion', 'earnings: promotion classified')
 check(!earnings.find((e) => e.signature === 'own'), 'earnings: own outgoing tx ignored')
 
+// ---- 4. "Just launched" detection ----
+const { fetchLaunches } = await import('../src/lib/launches')
+const META = 'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s'
+const newMint = Keypair.generate().publicKey.toBase58()
+const ownerMint = Keypair.generate().publicKey.toBase58()
+const launchFakes = [
+  { signature: 'create', memo: null, at: now - 600, payer: userKey.toBase58(), keys: [userKey.toBase58(), FEE, META], mint: newMint },
+  { signature: 'owner-create', memo: null, at: now - 1200, payer: FEE, keys: [FEE, META], mint: ownerMint },
+  { signature: 'promo', memo: `[60] coinforge:promote:${mints[0]}:basic`, at: now - 300, payer: userKey.toBase58(), keys: [userKey.toBase58(), FEE], mint: null },
+  { signature: 'old-create', memo: null, at: now - 30 * H, payer: userKey.toBase58(), keys: [userKey.toBase58(), FEE, META], mint: Keypair.generate().publicKey.toBase58() },
+  { signature: 'deposit', memo: null, at: now - 100, payer: userKey.toBase58(), keys: [userKey.toBase58(), FEE], mint: null },
+]
+const launchConn = {
+  getSignaturesForAddress: async () => launchFakes.map((f) => ({ signature: f.signature, slot: 0, err: null, memo: f.memo, blockTime: f.at })),
+  getParsedTransactions: async (list: string[]) =>
+    list.map((sig) => {
+      const f = launchFakes.find((x) => x.signature === sig)!
+      return {
+        blockTime: f.at,
+        meta: { err: null, preBalances: [], postBalances: [], postTokenBalances: f.mint ? [{ mint: f.mint, owner: f.payer, accountIndex: 3, uiTokenAmount: {} }] : [] },
+        transaction: { message: { accountKeys: f.keys.map((k, i) => ({ pubkey: new PublicKey(k), signer: i === 0, writable: true })) } },
+      }
+    }),
+} as unknown as Connection
+const launches = await fetchLaunches(launchConn)
+check(launches.some((l) => l.mint === newMint && l.creator === userKey.toBase58()), 'launches: new token creation detected with its mint')
+check(launches.some((l) => l.mint === ownerMint), 'launches: owner-created token included')
+check(launches.length === 2, `launches: promotion, deposit and old creation ignored (${launches.length} found)`)
+
 console.log(failed ? '\nFAILED' : '\nAll promotion checks passed ✔')
 process.exit(failed ? 1 : 0)

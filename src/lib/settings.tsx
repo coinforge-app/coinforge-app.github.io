@@ -22,6 +22,8 @@ export const PROMO_HOURS = Number(env.VITE_PROMO_HOURS || 24)
 // Higher boost tiers rank above basic promotions (Top Spot is pinned first)
 export const PROMO_BOOST_SOL = Number(env.VITE_PROMO_BOOST_SOL || 0.12)
 export const PROMO_TOP_SOL = Number(env.VITE_PROMO_TOP_SOL || 0.25)
+// How long a new CoinForge launch stays in the free "Just launched" strip
+export const LAUNCH_HOURS = Number(env.VITE_LAUNCH_HOURS || 6)
 // Share of every platform fee paid instantly to the referrer (?ref=<wallet>)
 // (CI passes unset repository variables as empty strings, so '' means "use the default")
 export const REF_PERCENT = Math.min(50, Math.max(0, Number(env.VITE_REF_PERCENT?.trim() || 30)))

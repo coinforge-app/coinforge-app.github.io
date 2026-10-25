@@ -293,3 +293,18 @@ section.info { margin-top: 32px; }
 .promo-card.tier-top { border-color: rgba(251, 191, 36, .6); box-shadow: 0 0 0 1px rgba(251, 191, 36, .25), 0 0 50px rgba(251, 191, 36, .12); }
 .promo-card.tier-boost { border-color: rgba(56, 189, 248, .4); }
 @media (max-width: 520px) { .tier-grid { grid-template-columns: 1fr; } }
+
+/* Just launched strip */
+.launch-section { margin-bottom: 28px; }
+.launch-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.launch-title h3, .promo-section-title { margin: 0; }
+.promo-section-title { margin-bottom: 12px; }
+.launch-strip { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+.launch-card { flex: 0 0 230px; margin: 0; padding: 14px; display: flex; flex-direction: column; gap: 10px; scroll-snap-align: start; }
+.launch-card.skeleton { height: 190px; background: linear-gradient(90deg, var(--card) 0%, var(--card-2) 50%, var(--card) 100%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+.launch-head { display: flex; align-items: center; gap: 10px; }
+.launch-head .promo-img { width: 40px; height: 40px; }
+.launch-age { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.launch-mc { display: flex; justify-content: space-between; background: var(--bg-2); border-radius: 10px; padding: 7px 10px; font-size: 13px; }
+.launch-mc span { color: var(--muted); }
+.launch-card .row .btn { flex: 1; }
