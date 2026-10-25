@@ -1,14 +1,16 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react'
 import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-react-ui'
-import { DEFAULT_RPC, FEE_ADDON_SOL, FEE_SOL, SettingsProvider, useSettings, type Network } from './lib/settings'
+import { DEFAULT_RPC, FEE_ADDON_SOL, FEE_SOL, PROMO_SOL, SettingsProvider, useSettings, type Network } from './lib/settings'
 
 // Pages pull in heavy SDKs (Metaplex/Irys, Raydium) — load each on demand
+const Promoted = lazy(() => import('./pages/Promoted'))
 const CreateToken = lazy(() => import('./pages/CreateToken'))
 const Liquidity = lazy(() => import('./pages/Liquidity'))
 const Tokens = lazy(() => import('./pages/Tokens'))
 
 const ROUTES = {
+  promoted: { label: '🔥 Promoted', page: Promoted },
   create: { label: 'Create Coin', page: CreateToken },
   liquidity: { label: 'Manage Liquidity', page: Liquidity },
   tokens: { label: 'Minted Tokens', page: Tokens },
@@ -18,7 +20,7 @@ type Route = keyof typeof ROUTES
 function useRoute(): Route {
   const read = () => {
     const r = window.location.hash.replace(/^#\/?/, '').split('?')[0] as Route
-    return r in ROUTES ? r : 'create'
+    return r in ROUTES ? r : 'promoted'
   }
   const [route, setRoute] = useState<Route>(read)
   useEffect(() => {
@@ -114,13 +116,15 @@ function Shell() {
 
   return (
     <>
-      <div className="announce">🚀 {feeText} • Non-custodial • Signed in your wallet</div>
+      <div className="announce">
+        🚀 {feeText} • 🔥 Promote your coin from {PROMO_SOL} SOL • Non-custodial
+      </div>
       <header className="header">
         <div className="header-inner">
           <button className="menu-btn" aria-label="Toggle menu" onClick={() => setMenuOpen(!menuOpen)}>
             ☰
           </button>
-          <a href="#/create" className="logo">
+          <a href="#/promoted" className="logo">
             <span className="logo-mark">◆</span>
             <b>
               Coin<span>Forge</span>

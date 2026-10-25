@@ -33,6 +33,10 @@ jobs:
           VITE_FEE_WALLET: ${{ vars.VITE_FEE_WALLET }}
           VITE_FEE_SOL: ${{ vars.VITE_FEE_SOL }}
           VITE_FEE_ADDON_SOL: ${{ vars.VITE_FEE_ADDON_SOL }}
+          # Homepage promotions (defaults: 0.05 SOL for 24h)
+          VITE_PROMO_SOL: ${{ vars.VITE_PROMO_SOL }}
+          VITE_PROMO_HOURS: ${{ vars.VITE_PROMO_HOURS }}
+          VITE_PROMO_BLOCKLIST: ${{ vars.VITE_PROMO_BLOCKLIST }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

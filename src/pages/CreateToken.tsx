@@ -166,6 +166,9 @@ export default function CreateToken() {
             <a className="btn primary" href={`#/liquidity?mint=${result.mint}`}>
               Create Liquidity Pool 💧
             </a>
+            <a className="btn ghost" href={`#/promoted?promote=${result.mint}`}>
+              🔥 Promote on homepage
+            </a>
           </div>
           <button className="link-btn" onClick={reset}>
             Create another token

@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "simulate": "tsx scripts/devnet-simulate.ts",
-    "e2e": "tsx scripts/devnet-e2e.ts"
+    "e2e": "tsx scripts/devnet-e2e.ts",
+    "promote-test": "tsx scripts/promote-test.ts"
   },
   "dependencies": {
     "@metaplex-foundation/mpl-token-metadata": "^3.4.0",

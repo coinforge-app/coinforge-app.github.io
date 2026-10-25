@@ -225,3 +225,33 @@ section.info { margin-top: 32px; }
   .logo { font-size: 19px; }
 }
 .page-loading { margin-top: 48px; }
+
+/* Promoted coins (homepage) */
+.hero-actions { margin-top: 24px; }
+.promo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; }
+.promo-card { margin: 0; display: flex; flex-direction: column; gap: 14px; padding: 18px; position: relative; transition: transform .15s, border-color .15s; }
+.promo-card:hover { transform: translateY(-2px); border-color: #34413a; }
+.promo-card.featured { border-color: rgba(251, 191, 36, .45); box-shadow: 0 0 40px rgba(251, 191, 36, .08); }
+.promo-card.skeleton { height: 300px; background: linear-gradient(90deg, var(--card) 0%, var(--card-2) 50%, var(--card) 100%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+.promo-top { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.promo-rank { font-weight: 800; color: var(--muted); }
+.promo-badge { background: rgba(110, 231, 168, .1); color: var(--accent); border: 1px solid rgba(110, 231, 168, .3); border-radius: 999px; padding: 2px 9px; font-weight: 700; }
+.promo-badge.star { background: rgba(251, 191, 36, .1); color: var(--warn); border-color: rgba(251, 191, 36, .35); }
+.promo-left { margin-left: auto; }
+.promo-head { display: flex; align-items: center; gap: 12px; }
+.promo-img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: var(--card-2); flex-shrink: 0; }
+.promo-img.ph { display: grid; place-items: center; font-weight: 800; color: var(--muted); text-transform: uppercase; }
+.promo-name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.promo-name strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 17px; }
+.promo-change { font-weight: 700; font-size: 14px; }
+.promo-change.up { color: var(--accent); }
+.promo-change.down { color: var(--danger); }
+.promo-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.promo-stats > div { background: var(--bg-2); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.promo-stats span { color: var(--muted); font-size: 11.5px; }
+.promo-ca { font-size: 13px; color: var(--muted); }
+.promo-empty { padding: 48px 24px; }
+.promo-empty p { color: var(--muted); }
+.promo-preview { display: flex; align-items: center; gap: 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
+.promo-disclaimer { margin-top: 28px; }

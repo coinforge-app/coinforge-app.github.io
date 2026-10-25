@@ -8,9 +8,18 @@ export const DEFAULT_RPC: Record<Network, string> = {
   mainnet: (import.meta.env?.VITE_RPC_MAINNET as string | undefined)?.trim() || 'https://api.mainnet-beta.solana.com',
 }
 
-export const FEE_WALLET = (import.meta.env?.VITE_FEE_WALLET as string | undefined)?.trim() || ''
-export const FEE_SOL = FEE_WALLET ? Number(import.meta.env?.VITE_FEE_SOL ?? 0) || 0 : 0
-export const FEE_ADDON_SOL = FEE_WALLET ? Number(import.meta.env?.VITE_FEE_ADDON_SOL ?? 0) || 0 : 0
+// Vite injects import.meta.env; Node scripts (scripts/*.ts) fall back to process.env
+const env: Record<string, string | undefined> =
+  import.meta.env ?? (globalThis as { process?: { env: Record<string, string> } }).process?.env ?? {}
+
+export const FEE_WALLET = env.VITE_FEE_WALLET?.trim() || ''
+export const FEE_SOL = FEE_WALLET ? Number(env.VITE_FEE_SOL ?? 0) || 0 : 0
+export const FEE_ADDON_SOL = FEE_WALLET ? Number(env.VITE_FEE_ADDON_SOL ?? 0) || 0 : 0
+
+// Paid homepage promotions (payments go to FEE_WALLET; the fee wallet itself promotes for free)
+export const PROMO_SOL = Number(env.VITE_PROMO_SOL || 0.05)
+export const PROMO_HOURS = Number(env.VITE_PROMO_HOURS || 24)
+export const PROMO_BLOCKLIST = new Set((env.VITE_PROMO_BLOCKLIST || '').split(',').map((s) => s.trim()).filter(Boolean))
 
 interface Settings {
   network: Network

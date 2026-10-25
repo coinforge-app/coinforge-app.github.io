@@ -81,6 +81,9 @@ function TokenDetails({ token }: { token: TokenRecord }) {
         <a className="btn primary sm" href={`#/liquidity?mint=${token.mint}`}>
           {pools.length ? 'Manage liquidity' : 'Create pool 💧'}
         </a>
+        <a className="btn ghost sm" href={`#/promoted?promote=${token.mint}`}>
+          🔥 Promote
+        </a>
       </div>
     </div>
   )
