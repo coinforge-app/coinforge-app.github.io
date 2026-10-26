@@ -9,6 +9,7 @@ const Promoted = lazy(() => import('./pages/Promoted'))
 const CreateToken = lazy(() => import('./pages/CreateToken'))
 const Liquidity = lazy(() => import('./pages/Liquidity'))
 const Tokens = lazy(() => import('./pages/Tokens'))
+const Airdrop = lazy(() => import('./pages/Airdrop'))
 const Refer = lazy(() => import('./pages/Refer'))
 const Earnings = lazy(() => import('./pages/Earnings'))
 
@@ -17,6 +18,7 @@ const ROUTES = {
   create: { label: 'Create Coin', page: CreateToken },
   liquidity: { label: 'Liquidity', page: Liquidity },
   tokens: { label: 'My Tokens', page: Tokens },
+  airdrop: { label: '🪂 Airdrop', page: Airdrop },
   refer: { label: `🤝 Earn ${REF_PERCENT}%`, page: Refer },
   earnings: { label: '📊 Earnings', page: Earnings },
 } as const

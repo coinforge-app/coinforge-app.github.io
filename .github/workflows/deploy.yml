@@ -40,6 +40,8 @@ jobs:
           VITE_PROMO_TOP_SOL: ${{ vars.VITE_PROMO_TOP_SOL }}
           # Hours a new launch stays in the free "Just launched" strip (default 6)
           VITE_LAUNCH_HOURS: ${{ vars.VITE_LAUNCH_HOURS }}
+          # Airdrop tool fee per started 100 recipients (default 0.05 SOL)
+          VITE_AIRDROP_FEE_SOL: ${{ vars.VITE_AIRDROP_FEE_SOL }}
           VITE_PROMO_BLOCKLIST: ${{ vars.VITE_PROMO_BLOCKLIST }}
           # Referral share of every fee (default 30, max 50)
           VITE_REF_PERCENT: ${{ vars.VITE_REF_PERCENT }}

@@ -308,3 +308,15 @@ section.info { margin-top: 32px; }
 .launch-mc { display: flex; justify-content: space-between; background: var(--bg-2); border-radius: 10px; padding: 7px 10px; font-size: 13px; }
 .launch-mc span { color: var(--muted); }
 .launch-card .row .btn { flex: 1; }
+
+/* Airdrop */
+textarea.mono { font-family: ui-monospace, 'Cascadia Code', monospace; font-size: 13px; }
+.file-btn { cursor: pointer; }
+.inline-check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.inline-check input { width: auto; }
+.invalid-list { font-size: 13px; color: var(--muted); margin-top: 8px; }
+.invalid-list summary { cursor: pointer; color: var(--warn); }
+.invalid-list div { padding: 3px 0; }
+.progress { position: relative; height: 34px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 12px 0; }
+.progress div { position: absolute; inset: 0 auto 0 0; background: rgba(110, 231, 168, .25); transition: width .3s; }
+.progress span { position: relative; display: block; text-align: center; line-height: 32px; font-size: 13px; font-weight: 600; }
