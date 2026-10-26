@@ -12,10 +12,15 @@ import {
   getLpBalance,
   getMintInfo,
   getPool,
+  liquidityTrust,
+  lockLiquidity,
   removeLiquidity,
   WSOL_MINT,
 } from '../lib/raydium'
-import { explorerUrl, useSettings, type Network } from '../lib/settings'
+import { SystemProgram } from '@solana/web3.js'
+import { isOwner } from '../lib/promote'
+import { getReferrer, splitFee, toLamports } from '../lib/referral'
+import { explorerUrl, LOCK_FEE_SOL, useSettings, type Network } from '../lib/settings'
 import { addPool, getPools, getTokens, removePool, type PoolRecord } from '../lib/storage'
 import { ConnectGate, CopyButton, errorMessage, short, Status } from '../lib/ui'
 import { useRaydium } from '../lib/useRaydium'
@@ -320,14 +325,19 @@ interface PoolView {
   lpSupply?: number
   lpDecimals?: number
   lpBalance?: bigint
+  /** % of pool liquidity locked (Burn & Earn) / burned */
+  lockedPct?: number
+  burnedPct?: number
 }
 
-function PoolCard({ view, network, onRemove, onForget }: {
+function PoolCard({ view, network, onRemove, onLock, onForget }: {
   view: PoolView
   network: Network
   onRemove: (v: PoolView) => void
+  onLock: (v: PoolView) => void
   onForget: (id: string) => void
 }) {
+  const secured = (view.lockedPct ?? 0) + (view.burnedPct ?? 0)
   const share = view.lpBalance !== undefined && view.lpSupply ? Number(fromRaw(view.lpBalance.toString(), view.lpDecimals!)) / view.lpSupply : 0
   return (
     <div className="card pool-card">
@@ -339,6 +349,9 @@ function PoolCard({ view, network, onRemove, onForget }: {
           </code>
         </div>
         <div className="row">
+          <button className="icon-btn" title="Lock liquidity forever (Burn & Earn)" disabled={!view.lpBalance} onClick={() => onLock(view)}>
+            🔒
+          </button>
           <button className="icon-btn" title="Remove liquidity" disabled={!view.lpBalance} onClick={() => onRemove(view)}>
             −
           </button>
@@ -369,6 +382,19 @@ function PoolCard({ view, network, onRemove, onForget }: {
             <span>Your share</span>
             <strong>{(share * 100).toFixed(2)}%</strong>
           </div>
+        </div>
+      )}
+      {view.lockedPct !== undefined && (
+        <div className="flags">
+          {secured >= 90 ? (
+            <span className="flag ok" title="Most liquidity can never be withdrawn — what traders and scanners look for">
+              🔒 {secured.toFixed(0)}% liquidity locked/burned
+            </span>
+          ) : (
+            <span className="flag warn" title="Unlocked liquidity can be pulled at any time — scanners flag this as a rug risk">
+              ⚠ Only {secured.toFixed(0)}% liquidity locked — lock it to earn trust
+            </span>
+          )}
         </div>
       )}
       <div className="row wrap">
@@ -459,6 +485,100 @@ function RemoveModal({ view, onClose, onConfirm }: {
   )
 }
 
+function LockModal({ view, onClose, onConfirm }: {
+  view: PoolView
+  onClose: () => void
+  onConfirm: (lp: bigint) => Promise<{ txId: string }>
+}) {
+  const { publicKey } = useWallet()
+  const { network } = useSettings()
+  const [pct, setPct] = useState(100)
+  const [agree, setAgree] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [done, setDone] = useState('')
+  const lp = (view.lpBalance! * BigInt(pct)) / 100n
+  const fee = isOwner(publicKey) ? 0 : LOCK_FEE_SOL
+  return (
+    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
+      <div className="modal card" onClick={(e) => e.stopPropagation()}>
+        <h3>🔒 Lock liquidity — {view.tokenSymbol || 'Token'} / SOL</h3>
+        <p className="hint">
+          Raydium <strong>Burn &amp; Earn</strong>: your LP tokens are locked <strong>forever</strong> — nobody, including you,
+          can ever pull this liquidity. In return you get a fee-key NFT and keep earning the pool's trading fees (claim them
+          any time on raydium.io → Portfolio). Locked liquidity is the #1 trust signal for traders and rug checkers.
+        </p>
+        <div className="pct-big">{pct}%</div>
+        <input type="range" min={1} max={100} value={pct} onChange={(e) => setPct(Number(e.target.value))} />
+        <div className="pct">
+          {[50, 75, 90, 100].map((p) => (
+            <button key={p} onClick={() => setPct(p)}>
+              {p}%
+            </button>
+          ))}
+        </div>
+        <div className="summary">
+          <div>
+            <span>Locks</span>
+            <strong>
+              {fmt((view.solReserve || 0) * (view.lpSupply ? Number(fromRaw(lp.toString(), view.lpDecimals!)) / view.lpSupply : 0), 4)} SOL
+              of liquidity
+            </strong>
+          </div>
+          <div>
+            <span>Platform fee</span>
+            <strong>{fee ? `${fee} SOL` : 'Free'}</strong>
+          </div>
+        </div>
+        <label className="inline-check agree">
+          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I understand this is permanent and
+          cannot be undone.
+        </label>
+        {error && <Status kind="error">{error}</Status>}
+        {done ? (
+          <>
+            <Status kind="success">
+              Liquidity locked 🔒 ·{' '}
+              <a href={explorerUrl('tx', done, network)} target="_blank" rel="noreferrer">
+                Transaction ↗
+              </a>
+            </Status>
+            <div className="row end">
+              <button className="btn primary" onClick={onClose}>
+                Done
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="row end">
+            <button className="btn ghost" disabled={busy} onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              className="btn primary"
+              disabled={busy || !agree || lp === 0n}
+              onClick={async () => {
+                setBusy(true)
+                setError('')
+                try {
+                  setDone((await onConfirm(lp)).txId)
+                } catch (e) {
+                  console.error(e)
+                  setError(errorMessage(e))
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              {busy ? 'Locking…' : `Lock ${pct}% forever`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function MyPools({ raydium, refreshKey }: { raydium: Raydium; refreshKey: number }) {
   const { connection } = useConnection()
   const { publicKey } = useWallet()
@@ -468,6 +588,7 @@ function MyPools({ raydium, refreshKey }: { raydium: Raydium; refreshKey: number
   const [manualId, setManualId] = useState('')
   const [scanning, setScanning] = useState(false)
   const [removing, setRemoving] = useState<PoolView | null>(null)
+  const [locking, setLocking] = useState<PoolView | null>(null)
   const [notice, setNotice] = useState('')
   const [tick, setTick] = useState(0)
 
@@ -481,7 +602,10 @@ function MyPools({ raydium, refreshKey }: { raydium: Raydium; refreshKey: number
           const { poolInfo } = await getPool(raydium, record.poolId)
           const solIsA = poolInfo.mintA.address === WSOL_MINT
           const token = solIsA ? poolInfo.mintB : poolInfo.mintA
-          const lpBalance = await getLpBalance(connection, publicKey!, poolInfo.lpMint.address)
+          const [lpBalance, trust] = await Promise.all([
+            getLpBalance(connection, publicKey!, poolInfo.lpMint.address),
+            liquidityTrust(connection, network, poolInfo).catch(() => undefined),
+          ])
           return {
             record,
             loading: false,
@@ -490,9 +614,12 @@ function MyPools({ raydium, refreshKey }: { raydium: Raydium; refreshKey: number
             tokenReserve: solIsA ? poolInfo.mintAmountB : poolInfo.mintAmountA,
             solReserve: solIsA ? poolInfo.mintAmountA : poolInfo.mintAmountB,
             price: solIsA ? 1 / poolInfo.price : poolInfo.price,
-            lpSupply: poolInfo.lpAmount,
+            // poolInfo.lpAmount is in raw units (not divided by decimals)
+            lpSupply: Number(fromRaw(poolInfo.lpAmount, poolInfo.lpMint.decimals)),
             lpDecimals: poolInfo.lpMint.decimals,
             lpBalance,
+            lockedPct: trust?.lockedPct,
+            burnedPct: trust?.burnedPct,
           }
         } catch (e) {
           return { record, loading: false, error: errorMessage(e) }
@@ -571,6 +698,7 @@ function MyPools({ raydium, refreshKey }: { raydium: Raydium; refreshKey: number
               view={v}
               network={network}
               onRemove={setRemoving}
+              onLock={setLocking}
               onForget={(id) => {
                 removePool(id)
                 setTick((x) => x + 1)
@@ -578,6 +706,26 @@ function MyPools({ raydium, refreshKey }: { raydium: Raydium; refreshKey: number
             />
           ))}
         </div>
+      )}
+      {locking && (
+        <LockModal
+          view={locking}
+          onClose={() => {
+            setLocking(null)
+            setTick((x) => x + 1)
+          }}
+          onConfirm={(lp) => {
+            const fee = isOwner(publicKey) ? 0 : LOCK_FEE_SOL
+            // Platform fee (split with a referrer) rides in the lock transaction itself
+            const feeIxs =
+              fee > 0
+                ? splitFee(toLamports(fee), getReferrer(publicKey)).map((p) =>
+                    SystemProgram.transfer({ fromPubkey: publicKey!, toPubkey: p.to, lamports: p.lamports }),
+                  )
+                : []
+            return lockLiquidity(raydium, network, locking.record.poolId, lp, feeIxs)
+          }}
+        />
       )}
       {removing && (
         <RemoveModal

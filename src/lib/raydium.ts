@@ -3,13 +3,22 @@ import {
   CREATE_CPMM_POOL_PROGRAM,
   DEVNET_PROGRAM_ID,
   getCpmmPdaAmmConfigId,
+  LOCK_CPMM_AUTH,
+  LOCK_CPMM_PROGRAM,
   Percent,
   PoolFetchType,
   Raydium,
   TxVersion,
   type ApiCpmmConfigInfo,
 } from '@raydium-io/raydium-sdk-v2'
-import { PublicKey, type Connection, type Transaction, type VersionedTransaction } from '@solana/web3.js'
+import { getAssociatedTokenAddressSync } from '@solana/spl-token'
+import {
+  PublicKey,
+  type Connection,
+  type Transaction,
+  type TransactionInstruction,
+  type VersionedTransaction,
+} from '@solana/web3.js'
 import BN from 'bn.js'
 import Decimal from 'decimal.js'
 import type { Network } from './settings'
@@ -130,4 +139,55 @@ export async function findPoolsForMint(raydium: Raydium, network: Network, mint:
   const res = await raydium.api.fetchPoolByMints({ mint1: mint, mint2: WSOL_MINT, type: PoolFetchType.Standard })
   const program = cpmmProgram(network).toBase58()
   return res.data.filter((p) => p.programId === program)
+}
+
+const lockIds = (network: Network) =>
+  network === 'devnet'
+    ? { programId: DEVNET_PROGRAM_ID.LOCK_CPMM_PROGRAM, authProgram: DEVNET_PROGRAM_ID.LOCK_CPMM_AUTH }
+    : { programId: LOCK_CPMM_PROGRAM, authProgram: LOCK_CPMM_AUTH }
+
+/**
+ * Raydium "Burn & Earn": LP tokens are locked forever; the owner receives a fee-key NFT and keeps
+ * claiming trading fees (on raydium.io/portfolio). Extra instructions (platform fee) ride in the same tx.
+ */
+export async function lockLiquidity(
+  raydium: Raydium,
+  network: Network,
+  poolId: string,
+  lpAmount: bigint,
+  extraInstructions: TransactionInstruction[] = [],
+) {
+  const { poolInfo, poolKeys } = await raydium.cpmm.getPoolInfoFromRpc(poolId)
+  const { builder, extInfo } = await raydium.cpmm.lockLp({
+    poolInfo,
+    poolKeys,
+    lpAmount: new BN(lpAmount.toString()),
+    withMetadata: true,
+    txVersion: TxVersion.LEGACY,
+    computeBudgetConfig: computeBudget(network),
+    ...lockIds(network),
+  })
+  if (extraInstructions.length) builder.addInstruction({ instructions: extraInstructions })
+  const { execute } = builder.build()
+  const { txId } = await execute({ sendAndConfirm: true })
+  return { txId, nftMint: extInfo.nftMint.toBase58() }
+}
+
+/** Share of a pool's liquidity that is locked (Burn & Earn) or burned — what scanners show as "LP locked". */
+export async function liquidityTrust(connection: Connection, network: Network, poolInfo: { lpMint: { address: string }; lpAmount: number }) {
+  const lpMint = new PublicKey(poolInfo.lpMint.address)
+  // getPoolInfoFromRpc reports lpAmount in raw units
+  const poolLp = new Decimal(poolInfo.lpAmount)
+  if (poolLp.lte(0)) return { lockedPct: 0, burnedPct: 0 }
+  const lockVault = getAssociatedTokenAddressSync(lpMint, lockIds(network).authProgram, true)
+  const [supply, locked] = await Promise.all([
+    connection.getTokenSupply(lpMint).then((r) => new Decimal(r.value.amount)),
+    connection
+      .getTokenAccountBalance(lockVault)
+      .then((r) => new Decimal(r.value.amount))
+      .catch(() => new Decimal(0)),
+  ])
+  // Burned LP leaves the mint supply but stays counted in the pool's LP total
+  const burned = Decimal.max(0, poolLp.minus(supply))
+  return { lockedPct: locked.div(poolLp).mul(100).toNumber(), burnedPct: burned.div(poolLp).mul(100).toNumber() }
 }

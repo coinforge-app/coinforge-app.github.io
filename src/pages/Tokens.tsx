@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
+import { PublicKey } from '@solana/web3.js'
+import { fetchCoinInfo, type CoinInfo } from '../lib/market'
 import { fromRaw, getMintInfo } from '../lib/raydium'
 import { explorerUrl, useSettings } from '../lib/settings'
 import { addToken, getPools, getTokens, type TokenRecord } from '../lib/storage'
@@ -29,6 +31,83 @@ async function scanDas(rpc: string, authority: string): Promise<DasAsset[]> {
   const json = await res.json()
   if (json.error) throw new Error(json.error.message || 'DAS request failed')
   return (json.result?.items as DasAsset[]).filter((a) => a.interface === 'FungibleToken' || a.interface === 'FungibleAsset')
+}
+
+/** ok: null = could not be checked (e.g. RPC without DAS) — shown neutral and left out of the score */
+type Check = { ok: boolean | null; label: string; fix?: { text: string; href?: string } }
+
+/** What rug checkers and trading bots look at first, with a way to fix each gap. */
+function TrustChecklist({ token, info }: { token: TokenRecord; info: MintInfo | null }) {
+  const { connection } = useConnection()
+  const { rpc } = useSettings()
+  const [coin, setCoin] = useState<CoinInfo | null>(null)
+  const [socials, setSocials] = useState<boolean | null>(null)
+  const [creatorPct, setCreatorPct] = useState<number | null>(null)
+
+  useEffect(() => {
+    fetchCoinInfo(rpc, [token.mint])
+      .then((r) => setCoin(r[token.mint]))
+      .catch(() => {})
+    if (token.uri)
+      fetch(token.uri)
+        .then((r) => r.json())
+        .then((j) => setSocials(!!(j.website || j.twitter || j.telegram || j.extensions?.website || j.extensions?.twitter)))
+        .catch(() => setSocials(false))
+  }, [rpc, token.mint, token.uri])
+
+  useEffect(() => {
+    if (!info) return
+    connection
+      .getParsedTokenAccountsByOwner(new PublicKey(token.creator), { mint: new PublicKey(token.mint) })
+      .then((res) => {
+        const held = res.value.reduce((s, a) => s + BigInt(a.account.data.parsed.info.tokenAmount.amount as string), 0n)
+        setCreatorPct(BigInt(info.supply) > 0n ? Number((held * 10000n) / BigInt(info.supply)) / 100 : 0)
+      })
+      .catch(() => {})
+  }, [connection, info, token.creator, token.mint])
+
+  if (!info) return null
+  const checks: Check[] = [
+    { ok: !info.mintAuthority, label: 'Mint authority revoked — fixed supply', fix: { text: 'Launch with “Revoke Mint” enabled' } },
+    { ok: !info.freezeAuthority, label: 'Freeze authority revoked — no honeypot', fix: { text: 'Launch with “Revoke Freeze” enabled' } },
+    { ok: coin?.mutable === undefined ? null : !coin.mutable, label: 'Metadata locked (immutable)', fix: { text: 'Launch with “Revoke Update” enabled' } },
+    { ok: socials, label: 'Website / socials in metadata', fix: { text: 'Add website, X and Telegram when launching' } },
+    {
+      ok: coin ? (coin.liquidityUsd ?? 0) > 0 : null,
+      label: 'Tradeable liquidity pool',
+      fix: { text: 'Create a pool', href: `#/liquidity?mint=${token.mint}` },
+    },
+    {
+      ok: creatorPct === null ? null : creatorPct <= 10,
+      label: `Creator holds ≤ 10% of supply${creatorPct !== null ? ` (now ${creatorPct.toFixed(1)}%)` : ''}`,
+      fix: { text: 'Put more supply into the pool or airdrop to your community', href: '#/airdrop' },
+    },
+  ]
+  const known = checks.filter((c) => c.ok !== null)
+  const passed = known.filter((c) => c.ok).length
+  return (
+    <div className="trust">
+      <div className="trust-head">
+        <span className={`trust-score ${passed === known.length ? 'ok' : passed >= known.length - 2 ? 'mid' : 'bad'}`}>
+          Trust score {passed}/{known.length}
+        </span>
+        <a className="btn ghost sm" href={`https://rugcheck.xyz/tokens/${token.mint}`} target="_blank" rel="noreferrer">
+          RugCheck report ↗
+        </a>
+      </div>
+      <ul className="trust-list">
+        {checks.map((c) => (
+          <li key={c.label} className={c.ok === null ? 'info' : c.ok ? 'ok' : 'bad'}>
+            <span>{c.ok === null ? '?' : c.ok ? '✓' : '✗'}</span> {c.label}
+            {c.ok === false && c.fix && (c.fix.href ? <a href={c.fix.href}> → {c.fix.text}</a> : <small> → {c.fix.text}</small>)}
+          </li>
+        ))}
+        <li className="info">
+          <span>🔒</span> Liquidity locked — check & lock it in <a href={`#/liquidity?mint=${token.mint}`}>Liquidity</a> (shown on each pool)
+        </li>
+      </ul>
+    </div>
+  )
 }
 
 function TokenDetails({ token }: { token: TokenRecord }) {
@@ -69,6 +148,7 @@ function TokenDetails({ token }: { token: TokenRecord }) {
           <strong className={pools.length ? 'ok-text' : 'muted'}>{pools.length ? `${pools.length} pool(s)` : 'No pool'}</strong>
         </div>
       </div>
+      <TrustChecklist token={token} info={info} />
       <div className="row wrap">
         <a className="btn ghost sm" href={explorerUrl('token', token.mint, network)} target="_blank" rel="noreferrer">
           Solscan ↗

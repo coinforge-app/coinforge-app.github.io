@@ -6,6 +6,7 @@ import { DEFAULT_RPC, FEE_ADDON_SOL, FEE_SOL, PROMO_SOL, REF_PERCENT, SettingsPr
 
 // Pages pull in heavy SDKs (Metaplex/Irys, Raydium) — load each on demand
 const Promoted = lazy(() => import('./pages/Promoted'))
+const Trending = lazy(() => import('./pages/Trending'))
 const CreateToken = lazy(() => import('./pages/CreateToken'))
 const Liquidity = lazy(() => import('./pages/Liquidity'))
 const Tokens = lazy(() => import('./pages/Tokens'))
@@ -15,7 +16,8 @@ const Earnings = lazy(() => import('./pages/Earnings'))
 
 const ROUTES = {
   promoted: { label: '🔥 Promoted', page: Promoted },
-  create: { label: 'Create Coin', page: CreateToken },
+  trending: { label: '📈 Trending', page: Trending },
+  create: { label: 'Create', page: CreateToken },
   liquidity: { label: 'Liquidity', page: Liquidity },
   tokens: { label: 'My Tokens', page: Tokens },
   airdrop: { label: '🪂 Airdrop', page: Airdrop },

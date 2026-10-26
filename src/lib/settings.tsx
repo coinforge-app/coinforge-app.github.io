@@ -22,6 +22,8 @@ export const PROMO_HOURS = Number(env.VITE_PROMO_HOURS || 24)
 // Higher boost tiers rank above basic promotions (Top Spot is pinned first)
 export const PROMO_BOOST_SOL = Number(env.VITE_PROMO_BOOST_SOL || 0.12)
 export const PROMO_TOP_SOL = Number(env.VITE_PROMO_TOP_SOL || 0.25)
+// Locking liquidity (Raydium Burn & Earn) — defaults to the add-on price
+export const LOCK_FEE_SOL = FEE_WALLET ? Number(env.VITE_LOCK_FEE_SOL || FEE_ADDON_SOL || 0) : 0
 // Airdrop tool fee per started 100 recipients (owner sends for free)
 export const AIRDROP_FEE_SOL = FEE_WALLET ? Number(env.VITE_AIRDROP_FEE_SOL || 0.05) : 0
 // How long a new CoinForge launch stays in the free "Just launched" strip
