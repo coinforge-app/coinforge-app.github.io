@@ -3,7 +3,7 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import { countAddons, createToken, DEFAULT_CREATOR, makeUmi, platformFee, rawAmount, type TokenForm } from '../lib/createToken'
 import { getReferrer } from '../lib/referral'
-import { explorerUrl, FEE_ADDON_SOL, FEE_SOL, REF_PERCENT, useSettings } from '../lib/settings'
+import { explorerUrl, FEE_ADDON_SOL, FEE_SOL, FEE_WALLET, REF_PERCENT, useSettings } from '../lib/settings'
 import { addToken } from '../lib/storage'
 import { CopyButton, errorMessage, Faq, Status, Toggle } from '../lib/ui'
 
@@ -95,7 +95,8 @@ export default function CreateToken() {
     return ''
   }, [step, form])
 
-  const fee = platformFee(form)
+  const owner = !!wallet.publicKey && wallet.publicKey.toBase58() === FEE_WALLET
+  const fee = platformFee(form, wallet.publicKey?.toBase58())
   const addons = countAddons(form)
 
   const submit = async () => {
@@ -342,7 +343,7 @@ export default function CreateToken() {
                       <span className="check">{form[a.key] ? '✓' : ''}</span>
                     </div>
                     <p>{a.text}</p>
-                    <small>{form[a.key] ? 'Selected' : 'Not selected'}{FEE_ADDON_SOL > 0 ? ` · +${FEE_ADDON_SOL} SOL` : ''}</small>
+                    <small>{form[a.key] ? 'Selected' : 'Not selected'}{FEE_ADDON_SOL > 0 && !owner ? ` · +${FEE_ADDON_SOL} SOL` : ''}</small>
                   </button>
                 ))}
               </div>
@@ -351,8 +352,8 @@ export default function CreateToken() {
                 <div>
                   <span>Platform fee</span>
                   <strong>
-                    {fee > 0 ? `${fee.toFixed(2)} SOL` : 'Free'}
-                    {FEE_SOL > 0 && addons > 0 && <small> ({addons} add-on{addons > 1 ? 's' : ''})</small>}
+                    {fee > 0 ? `${fee.toFixed(3).replace(/0+$/, '')} SOL` : owner ? 'Free (owner)' : 'Free'}
+                    {fee > 0 && addons > 0 && <small> ({addons} add-on{addons > 1 ? 's' : ''})</small>}
                   </strong>
                   {fee > 0 && getReferrer(wallet.publicKey) && <small className="ok-text">🤝 {REF_PERCENT}% goes to the trader who referred you</small>}
                 </div>

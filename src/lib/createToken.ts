@@ -62,7 +62,9 @@ export function countAddons(f: Pick<TokenForm, 'customCreator' | 'revokeFreeze' 
   return [f.customCreator, f.revokeFreeze, f.revokeMint, f.revokeUpdate].filter(Boolean).length
 }
 
-export function platformFee(f: Parameters<typeof countAddons>[0]) {
+/** The fee wallet creates for free — otherwise it would have to hold the fee just to pay itself. */
+export function platformFee(f: Parameters<typeof countAddons>[0], creator?: string) {
+  if (creator && creator === FEE_WALLET) return 0
   return FEE_SOL + countAddons(f) * FEE_ADDON_SOL
 }
 
@@ -139,7 +141,7 @@ export function buildCreateTokenTx(
   let builder = transactionBuilder()
   if (network === 'mainnet') builder = builder.add(setComputeUnitPrice(umi, { microLamports: 200_000 }))
 
-  const fee = platformFee(form)
+  const fee = platformFee(form, umi.identity.publicKey.toString())
   if (fee > 0 && FEE_WALLET) {
     // Platform fee, split with the referrer (if any) in the same transaction
     for (const p of splitFee(toLamports(fee), referrer)) {
